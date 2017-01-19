@@ -20,7 +20,7 @@
 
 #include <Arduino.h>
 #include <Stream.h>
-#include <avr/wdt.h>
+//#include <avr/wdt.h>
 #include <stdlib.h>
 
 #include "GPRSbee.h"
@@ -33,6 +33,7 @@
 #define diagPrintLn(...)
 #endif
 
+#define wdt_reset()
 
 GPRSbeeClass gprsbee;
 
@@ -188,6 +189,7 @@ void GPRSbeeClass::onToggle()
 {
   if (!isOn()) {
     toggle();
+    Serial1.begin(57600);
   }
 }
 
@@ -204,6 +206,7 @@ void GPRSbeeClass::offToggle()
       // Should we care if it didn't?
     }
     // Wait a little longer to give the SIM900 time to really switch off.
+    Serial1.end();
     mydelay(500);
   }
 }
@@ -222,6 +225,7 @@ void GPRSbeeClass::onSwitchMbiliJP2()
 {
   diagPrintLn(F("on powerPin"));
   digitalWrite(_powerPin, HIGH);
+  Serial1.begin(57600);
   // Wait maximum 10 seconds for it to switch on.
   for (uint8_t i = 0; i < 10 && !isOn(); ++i) {
     mydelay(1000);
@@ -237,6 +241,7 @@ void GPRSbeeClass::offSwitchMbiliJP2()
   digitalWrite(_powerPin, LOW);
   // Should be instant
   // Let's wait a little, but not too long
+  Serial1.end();
   mydelay(500);
 }
 
