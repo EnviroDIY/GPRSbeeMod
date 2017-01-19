@@ -1,6 +1,9 @@
 *~
 *.zip
 
+#PyCharm
+.idea/
+
 # Doxygen stuff
 html/
 latex/

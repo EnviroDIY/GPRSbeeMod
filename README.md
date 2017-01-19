@@ -2,6 +2,8 @@
 
 This is the Arduino library for GPRSbee.
 
+This branch has Sodaq's version 1.2 of the library, which has then been modified to call Serial1.begin/end directly, according to what Gabriel Notman did here:  https://github.com/GabrielNotman/AutonomoTesting/commit/9bc57730b11b1acabe904eb2b8cd055470d2f8bc
+
 ## HTTP GET Methods
 
 There is a group of functions to do a http GET. The main function is
