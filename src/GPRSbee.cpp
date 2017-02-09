@@ -132,6 +132,7 @@ void GPRSbeeClass::initProlog(Stream &stream, size_t bufferSize)
   _skipCGATT = false;
   _changedSkipCGATT = false;
   _productId = prodid_unknown;
+  _HTTPHeaders = "";
 }
 
 bool GPRSbeeClass::on()
@@ -1504,6 +1505,20 @@ bool GPRSbeeClass::doHTTPPOSTmiddle(const char *url, const char *buffer, size_t 
     goto ending;
   }
 
+  // Add HTTP Headers
+  if ( _HTTPHeaders != "" )
+  {
+    sendCommandProlog();
+    sendCommandAdd_P(PSTR("AT+HTTPPARA=\"USERDATA\",\""));
+    sendCommandAdd(url);
+    sendCommandAdd('"');
+    sendCommandEpilog();
+    if (!waitForOK()) {
+    goto ending;
+    }
+  }
+
+  // Tell it how much data you will send
   sendCommandProlog();
   sendCommandAdd_P(PSTR("AT+HTTPDATA="));
   itoa(len, num_bytes, 10);
@@ -1584,6 +1599,20 @@ bool GPRSbeeClass::doHTTPGETmiddle(const char *url, char *buffer, size_t len)
     goto ending;
   }
 
+  // Add HTTP Headers, if applicable
+  if ( _HTTPHeaders != "" )
+  {
+    sendCommandProlog();
+    sendCommandAdd_P(PSTR("AT+HTTPPARA=\"USERDATA\",\""));
+    sendCommandAdd(url);
+    sendCommandAdd('"');
+    sendCommandEpilog();
+    if (!waitForOK()) {
+    goto ending;
+    }
+  }
+
+  // Tell it this will be a "GET" Request (0)
   if (!doHTTPACTION(0)) {
     goto ending;
   }
