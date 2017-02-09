@@ -113,6 +113,8 @@ public:
   uint8_t getLastCSQ() const { return _lastCSQ; }
   uint8_t getCSQtime() const { return _CSQtime; }
 
+  void addHTTPHeaders(const String headers) { _HTTPHeaders = headers; }
+
   bool doHTTPPOST(const char *apn, const char *url, const char *postdata, size_t pdlen);
   bool doHTTPPOST(const char *apn, const String & url, const char *postdata, size_t pdlen);
   bool doHTTPPOST(const char *apn, const char *apnuser, const char *apnpwd,
@@ -269,6 +271,7 @@ private:
     prodid_SIM800,
   };
   enum productIdKind _productId;
+  String _HTTPHeaders;
 };
 
 extern GPRSbeeClass gprsbee;
