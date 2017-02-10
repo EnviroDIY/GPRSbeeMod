@@ -1770,10 +1770,18 @@ bool GPRSbeeClass::doHTTPACTION(char num)
       goto ending;
     }
     // TODO Which result codes are allowed to pass?
-    if (replycode == 200) {
+    if (replycode == 200 || replycode == 201 || replycode == 202)
+    {
       retval = true;
-    } else {
-      // Everything else is considered an error
+    }
+    else  // Everything else is considered an error
+    {
+      if (replycode >= 300 && replycode < 400)
+      { diagPrintLn("Request Redirected"); }
+      if (replycode >= 400 && replycode < 500)
+      { diagPrintLn("Client Error! Check request format and permissions"); }
+      if (replycode >= 500 && replycode < 600)
+      { diagPrintLn("Server Error!"); }
     }
   }
 
