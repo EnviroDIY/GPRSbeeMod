@@ -114,6 +114,7 @@ public:
   uint8_t getCSQtime() const { return _CSQtime; }
 
   void addHTTPHeaders(const String headers) { _HTTPHeaders = headers; }
+  void addContentType(const String content) { _contentType = content; }
 
   bool doHTTPPOST(const char *apn, const char *url, const char *postdata, size_t pdlen);
   bool doHTTPPOST(const char *apn, const String & url, const char *postdata, size_t pdlen);
@@ -272,6 +273,7 @@ private:
   };
   enum productIdKind _productId;
   String _HTTPHeaders;
+  String _contentType;
 };
 
 extern GPRSbeeClass gprsbee;

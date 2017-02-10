@@ -133,6 +133,7 @@ void GPRSbeeClass::initProlog(Stream &stream, size_t bufferSize)
   _changedSkipCGATT = false;
   _productId = prodid_unknown;
   _HTTPHeaders = "";
+  _contentType = "";
 }
 
 bool GPRSbeeClass::on()
@@ -1486,6 +1487,8 @@ ending:
  *
  * This function does:
  *  - HTTPPARA with the URL
+ *  - HTTPPARA with the Content Type
+ *  - HTTPPARA with the HEADERS
  *  - HTTPDATA
  *  - HTTPACTION(1)
  */
@@ -1505,12 +1508,25 @@ bool GPRSbeeClass::doHTTPPOSTmiddle(const char *url, const char *buffer, size_t 
     goto ending;
   }
 
-  // Add HTTP Headers
+  // Add HTTP Post Content Type
+  if ( _contentType != "" )
+  {
+    sendCommandProlog();
+    sendCommandAdd_P(PSTR("AT+HTTPPARA=\"CONTENT\",\""));
+    sendCommandAdd(_contentType);
+    sendCommandAdd('"');
+    sendCommandEpilog();
+    if (!waitForOK()) {
+    goto ending;
+    }
+  }
+
+  // Add HTTP CustomHeaders
   if ( _HTTPHeaders != "" )
   {
     sendCommandProlog();
     sendCommandAdd_P(PSTR("AT+HTTPPARA=\"USERDATA\",\""));
-    sendCommandAdd(url);
+    sendCommandAdd(_HTTPHeaders);
     sendCommandAdd('"');
     sendCommandEpilog();
     if (!waitForOK()) {
@@ -1531,6 +1547,7 @@ bool GPRSbeeClass::doHTTPPOSTmiddle(const char *url, const char *buffer, size_t 
   }
 
   // Send data ...
+  diagPrintLn("--Sending Data--")
   for (size_t i = 0; i < len; ++i) {
     _myStream->print(*buffer++);
   }
@@ -1604,7 +1621,7 @@ bool GPRSbeeClass::doHTTPGETmiddle(const char *url, char *buffer, size_t len)
   {
     sendCommandProlog();
     sendCommandAdd_P(PSTR("AT+HTTPPARA=\"USERDATA\",\""));
-    sendCommandAdd(url);
+    sendCommandAdd(_HTTPHeaders);
     sendCommandAdd('"');
     sendCommandEpilog();
     if (!waitForOK()) {
