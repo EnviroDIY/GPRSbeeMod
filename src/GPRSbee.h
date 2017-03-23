@@ -97,16 +97,23 @@ private:
   int8_t        _tz;            // timezone (multiple of 15 minutes)
 };
 
+// The versions of GPRSBees available
+  typedef enum GPRSVersion {
+    V04 = 0,
+    V06
+} typedev;
+
 class GPRSbeeClass : public Sodaq_GSM_Modem
 {
 public:
-  void init(Stream &stream, int ctsPin, int powerPin,
+  void init(Stream &stream, int status_CTS_pin, int onoff_DTR_pin,
       int bufferSize=SIM900_DEFAULT_BUFFER_SIZE);
-  void initNdogoSIM800(Stream &stream, int pwrkeyPin, int vbatPin, int statusPin,
+  void initNdogoSIM800(Stream &stream, int pwrkeyPin, int vbatPin, int status_CTS_pin,
       int bufferSize=SIM900_DEFAULT_BUFFER_SIZE);
-  void initAutonomoSIM800(Stream &stream, int vcc33Pin, int onoffPin, int statusPin,
+  void initAutonomoSIM800(Stream &stream, int vcc33Pin, int onoff_DTR_pin, int status_CTS_pin,
       int bufferSize=SIM900_DEFAULT_BUFFER_SIZE);
-  void setPowerSwitchedOnOff(bool x) { _onoffMethod = onoff_mbili_jp2; }
+  void initGPRS(Stream &stream, int vcc33Pin, int onoff_DTR_pin, int status_CTS_pin,
+      GPRSVersion version=V06, int bufferSize=SIM900_DEFAULT_BUFFER_SIZE);
 
   void setSkipCGATT(bool x=true)        { _skipCGATT = x; _changedSkipCGATT = true; }
 
@@ -240,13 +247,13 @@ public:
   bool sendMQTTPacket(uint8_t * pckt, size_t len);
   bool receiveMQTTPacket(uint8_t * pckt, size_t expected_len);
 
-
   // Gets device IMEI number
   bool getIMEI(char *buffer, size_t buflen);
   // Gets Complete TA Capabilities List
   bool getGCAP(char *buffer, size_t buflen);
   // Gets international mobile subscriber identity
   bool getCIMI(char *buffer, size_t buflen);
+  // Gets the SIM card number
   bool getCCID(char *buffer, size_t buflen);
   // Gets the calling line identity (CLI) of the calling party
   bool getCLIP(char *buffer, size_t buflen);
@@ -292,15 +299,6 @@ public:
 
 private:
   void initProlog(Stream &stream, size_t bufferSize);
-
-  void onToggle();
-  void offToggle();
-  void onSwitchMbiliJP2();
-  void offSwitchMbiliJP2();
-  void onSwitchNdogoSIM800();
-  void offSwitchNdogoSIM800();
-  void onSwitchAutonomoSIM800();
-  void offSwitchAutonomoSIM800();
 
   bool isAlive();
   bool isOn();
@@ -352,17 +350,8 @@ private:
   ResponseTypes readResponse(char* buffer, size_t size, size_t* outSize,
           uint32_t timeout = DEFAULT_READ_MS) { return ResponseNotFound; }
 
-  enum onoffKind {
-    onoff_toggle,
-    onoff_mbili_jp2,
-    onoff_ndogo_sim800,
-  };
-  int8_t _statusPin;
-  int8_t _powerPin;
-  int8_t _vbatPin;
   size_t _ftpMaxLength;
   bool _transMode;
-  enum onoffKind _onoffMethod;
   bool _skipCGATT;
   bool _changedSkipCGATT;		// This is set when the user has changed it.
   enum productIdKind {
