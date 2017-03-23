@@ -1,5 +1,3 @@
-#ifndef GPRSBEE_H_
-#define GPRSBEE_H_
 /*
  * Copyright (c) 2013-2015 Kees Bakker.  All rights reserved.
  *
@@ -20,9 +18,14 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+#ifndef GPRSBEE_H_
+#define GPRSBEE_H_
+
 #include <stdint.h>
 #include <Arduino.h>
 #include <Stream.h>
+
+#include "Sodaq_GSM_Modem.h"
 
 // Comment this line, or make it an undef to disable
 // diagnostic
@@ -94,24 +97,20 @@ private:
   int8_t        _tz;            // timezone (multiple of 15 minutes)
 };
 
-class GPRSbeeClass
+class GPRSbeeClass : public Sodaq_GSM_Modem
 {
 public:
   void init(Stream &stream, int ctsPin, int powerPin,
       int bufferSize=SIM900_DEFAULT_BUFFER_SIZE);
   void initNdogoSIM800(Stream &stream, int pwrkeyPin, int vbatPin, int statusPin,
       int bufferSize=SIM900_DEFAULT_BUFFER_SIZE);
-  bool on();
-  bool off();
+  void initAutonomoSIM800(Stream &stream, int vcc33Pin, int onoffPin, int statusPin,
+      int bufferSize=SIM900_DEFAULT_BUFFER_SIZE);
   void setPowerSwitchedOnOff(bool x) { _onoffMethod = onoff_mbili_jp2; }
-  void setDiag(Stream &stream) { _diagStream = &stream; }
-  void setDiag(Stream *stream) { _diagStream = stream; }
 
   void setSkipCGATT(bool x=true)        { _skipCGATT = x; _changedSkipCGATT = true; }
 
-  void setMinSignalQuality(int q) { _minSignalQuality = q; }
-  uint8_t getLastCSQ() const { return _lastCSQ; }
-  uint8_t getCSQtime() const { return _CSQtime; }
+  bool networkOn();
 
   void addHTTPHeaders(const String headers) { _HTTPHeaders = headers; }
   void addContentType(const String content) { _contentType = content; }
@@ -144,9 +143,10 @@ public:
   bool openTCP(const char *apn, const char *server, int port, bool transMode=false);
   bool openTCP(const char *apn, const char *apnuser, const char *apnpwd,
       const char *server, int port, bool transMode=false);
-  void closeTCP();
+  void closeTCP(bool switchOff=true);
   bool isTCPConnected();
-  bool sendDataTCP(const uint8_t *data, int data_len);
+  bool sendDataTCP(const uint8_t *data, size_t data_len);
+  bool receiveDataTCP(uint8_t *data, size_t data_len, uint16_t timeout=4000);
   bool receiveLineTCP(const char **buffer, uint16_t timeout=4000);
 
   bool openFTP(const char *apn, const char *server,
@@ -161,19 +161,114 @@ public:
 
   bool sendSMS(const char *telno, const char *text);
 
+  /////////////////////
+  // Sodaq_GSM_Modem //
+  /////////////////////
+  uint32_t getDefaultBaudrate() { return 0; }
+
+  // Sets the apn, apn username and apn password to the modem.
+  bool sendAPN(const char* apn, const char* username, const char* password);
+
+  // Turns on and initializes the modem, then connects to the network and activates the data connection.
+  bool connect(const char* apn, const char* username, const char* password);
+
+  // Disconnects the modem from the network.
+  bool disconnect();
+
+  // Returns true if the modem is connected to the network and has an activated data connection.
+  bool isConnected();
+
+  NetworkRegistrationStatuses getNetworkStatus() { return UnknownNetworkRegistrationStatus; }
+
+  NetworkTechnologies getNetworkTechnology() { return UnknownNetworkTechnology; }
+
+  // Get the Received Signal Strength Indication and Bit Error Rate
+  bool getRSSIAndBER(int8_t* rssi, uint8_t* ber);
+
+  // Get the Operator Name
+  bool getOperatorName(char* buffer, size_t size) { return false; }
+
+  // Get Mobile Directory Number
+  bool getMobileDirectoryNumber(char* buffer, size_t size) { return false; }
+
+  // Get International Mobile Station Identity
+  bool getIMSI(char* buffer, size_t size) { return false; }
+
+  // Get SIM status
+  SimStatuses getSimStatus() { return SimStatusUnknown; }
+
+  // Get IP Address
+  IP_t getLocalIP() { return 0; }
+
+  // Get Host IP
+  IP_t getHostIP(const char* host) { return 0; }
+
+  // ==== Sockets
+
+  int createSocket(Protocols protocol, uint16_t localPort = 0) { return false; }
+  bool connectSocket(uint8_t socket, const char* host, uint16_t port) { return false; }
+  bool socketSend(uint8_t socket, const uint8_t* buffer, size_t size) { return false; }
+  size_t socketReceive(uint8_t socket, uint8_t* buffer, size_t size) { return 0; } // returns number of bytes set to buffer
+  bool closeSocket(uint8_t socket) { return false; }
+
+  // ==== HTTP
+
+  size_t httpRequest(const char* url, uint16_t port,
+          const char* endpoint, HttpRequestTypes requestType = GET,
+          char* responseBuffer = NULL, size_t responseSize = 0,
+          const char* sendBuffer = NULL, size_t sendSize = 0) { return 0; }
+
+  // ==== FTP
+
+  bool openFtpConnection(const char* server, const char* username, const char* password, FtpModes ftpMode) { return false; }
+  bool closeFtpConnection() { return false; }
+  bool openFtpFile(const char* filename, const char* path = NULL) { return false; }
+  bool ftpSend(const char* buffer) { return false; }
+  bool ftpSend(const uint8_t* buffer, size_t size) { return false; }
+  int ftpReceive(char* buffer, size_t size) { return 0; }
+  bool closeFtpFile() { return false; }
+
+  // ==== SMS
+  int getSmsList(const char* statusFilter = "ALL", int* indexList = NULL, size_t size = 0) { return 0; }
+  bool readSms(uint8_t index, char* phoneNumber, char* buffer, size_t size) { return false; }
+  bool deleteSms(uint8_t index) { return false; }
+  bool sendSms(const char* phoneNumber, const char* buffer) { return false; }
+
+  // MQTT (using this class as a transport)
+  bool openMQTT(const char * server, uint16_t port = 1883);
+  bool closeMQTT(bool switchOff=true);
+  bool sendMQTTPacket(uint8_t * pckt, size_t len);
+  bool receiveMQTTPacket(uint8_t * pckt, size_t expected_len);
+
+
+  // Gets device IMEI number
   bool getIMEI(char *buffer, size_t buflen);
+  // Gets Complete TA Capabilities List
   bool getGCAP(char *buffer, size_t buflen);
+  // Gets international mobile subscriber identity
   bool getCIMI(char *buffer, size_t buflen);
+  bool getCCID(char *buffer, size_t buflen);
+  // Gets the calling line identity (CLI) of the calling party
   bool getCLIP(char *buffer, size_t buflen);
+  // Gets the calling line indentification restriction
   bool getCLIR(char *buffer, size_t buflen);
+  // Gets the connected line identity
   bool getCOLP(char *buffer, size_t buflen);
+  // Gets the current network operator
   bool getCOPS(char *buffer, size_t buflen);
+  // Sets the sim card clock
   bool setCCLK(const SIMDateTime & dt);
+  // Gets the LOCAL time
   bool getCCLK(char *buffer, size_t buflen);
+  // Gets the service provider name from SIM
   bool getCSPN(char *buffer, size_t buflen);
+  // Gets the SIM card group identifier
   bool getCGID(char *buffer, size_t buflen);
+  // Sets initial URC presentation value (0 disables, 1 enables)
   bool setCIURC(uint8_t value);
+  // Gets the initial URC presentation value
   bool getCIURC(char *buffer, size_t buflen);
+  // Sets/Gets the phone functionality mode
   bool setCFUN(uint8_t value);
   bool getCFUN(uint8_t * value);
 
@@ -191,17 +286,26 @@ public:
   // Using CCLK, get 32-bit number of seconds since Y2K epoch (2000-01-01)
   uint32_t getY2KEpoch() const;
 
+  // Getters of diagnostic values
+  uint32_t getTimeToOpenTCP() { return _timeToOpenTCP; }
+  uint32_t getTimeToCloseTCP() { return _timeToCloseTCP; }
+
 private:
   void initProlog(Stream &stream, size_t bufferSize);
+
   void onToggle();
   void offToggle();
   void onSwitchMbiliJP2();
   void offSwitchMbiliJP2();
   void onSwitchNdogoSIM800();
   void offSwitchNdogoSIM800();
+  void onSwitchAutonomoSIM800();
+  void offSwitchAutonomoSIM800();
+
+  bool isAlive();
   bool isOn();
   void toggle();
-  bool isAlive();
+
   void switchEchoOff();
   void flushInput();
   int readLine(uint32_t ts_max);
@@ -245,33 +349,32 @@ private:
   bool sendFTPdata_low(uint8_t *buffer, size_t size);
   bool sendFTPdata_low(uint8_t (*read)(), size_t size);
 
+  ResponseTypes readResponse(char* buffer, size_t size, size_t* outSize,
+          uint32_t timeout = DEFAULT_READ_MS) { return ResponseNotFound; }
+
   enum onoffKind {
     onoff_toggle,
     onoff_mbili_jp2,
     onoff_ndogo_sim800,
   };
-  char * _SIM900_buffer;
-  size_t _bufSize;
-  Stream *_myStream;
-  Stream *_diagStream;
   int8_t _statusPin;
   int8_t _powerPin;
   int8_t _vbatPin;
-  int _minSignalQuality;
   size_t _ftpMaxLength;
   bool _transMode;
-  bool _echoOff;
   enum onoffKind _onoffMethod;
   bool _skipCGATT;
   bool _changedSkipCGATT;		// This is set when the user has changed it.
-  uint8_t _lastCSQ;
-  uint8_t _CSQtime;
   enum productIdKind {
     prodid_unknown,
     prodid_SIM900,
     prodid_SIM800,
   };
   enum productIdKind _productId;
+
+  uint32_t _timeToOpenTCP;
+  uint32_t _timeToCloseTCP;
+
   String _HTTPHeaders;
   String _contentType;
 };

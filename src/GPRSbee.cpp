@@ -20,7 +20,12 @@
 
 #include <Arduino.h>
 #include <Stream.h>
-//#include <avr/wdt.h>
+#include <avr/pgmspace.h>
+#ifdef ARDUINO_ARCH_AVR
+#include <avr/wdt.h>
+#else
+#define wdt_reset()
+#endif
 #include <stdlib.h>
 
 #include "GPRSbee.h"
@@ -32,8 +37,6 @@
 #define diagPrint(...)
 #define diagPrintLn(...)
 #endif
-
-#define wdt_reset()
 
 GPRSbeeClass gprsbee;
 
@@ -117,9 +120,9 @@ void GPRSbeeClass::initNdogoSIM800(Stream &stream, int pwrkeyPin, int vbatPin, i
 
 void GPRSbeeClass::initProlog(Stream &stream, size_t bufferSize)
 {
-  _bufSize = bufferSize;
-  _SIM900_buffer = (char *)malloc(_bufSize);
-  _myStream = &stream;
+  _inputBufferSize = bufferSize;
+  _inputBuffer = (char *)malloc(_inputBufferSize);
+  _modemStream = &stream;
   _diagStream = 0;
   _statusPin = -1;
   _powerPin = -1;
@@ -333,7 +336,7 @@ void GPRSbeeClass::switchEchoOff()
 void GPRSbeeClass::flushInput()
 {
   int c;
-  while ((c = _myStream->read()) >= 0) {
+  while ((c = _modemStream->read()) >= 0) {
     diagPrint((char)c);
   }
 }
@@ -343,7 +346,7 @@ void GPRSbeeClass::flushInput()
  */
 int GPRSbeeClass::readLine(uint32_t ts_max)
 {
-  if (_SIM900_buffer == NULL) {
+  if (_inputBuffer == NULL) {
     return -1;
   }
 
@@ -357,7 +360,7 @@ int GPRSbeeClass::readLine(uint32_t ts_max)
   while (!isTimedOut(ts_max)) {
     wdt_reset();
     if (seenCR) {
-      c = _myStream->peek();
+      c = _modemStream->peek();
       // ts_waitLF is guaranteed to be non-zero
       if ((c == -1 && isTimedOut(ts_waitLF)) || (c != -1 && c != '\n')) {
         //diagPrint(F("readLine:  peek '")); diagPrint(c); diagPrintLn('\'');
@@ -367,7 +370,7 @@ int GPRSbeeClass::readLine(uint32_t ts_max)
       // Only \n should fall through
     }
 
-    c = _myStream->read();
+    c = _modemStream->read();
     if (c < 0) {
       continue;
     }
@@ -379,8 +382,8 @@ int GPRSbeeClass::readLine(uint32_t ts_max)
       goto ok;
     } else {
       // Any other character is stored in the line buffer
-      if (bufcnt < (_bufSize - 1)) {    // Leave room for the terminating NUL
-        _SIM900_buffer[bufcnt++] = c;
+      if (bufcnt < (_inputBufferSize - 1)) {    // Leave room for the terminating NUL
+        _inputBuffer[bufcnt++] = c;
       }
     }
   }
@@ -389,8 +392,8 @@ int GPRSbeeClass::readLine(uint32_t ts_max)
   return -1;            // This indicates: timed out
 
 ok:
-  _SIM900_buffer[bufcnt] = 0;     // Terminate with NUL byte
-  //diagPrint(F(" ")); diagPrintLn(_SIM900_buffer);
+  _inputBuffer[bufcnt] = 0;     // Terminate with NUL byte
+  //diagPrint(F(" ")); diagPrintLn(_inputBuffer);
   return bufcnt;
 
 }
@@ -410,7 +413,7 @@ int GPRSbeeClass::readBytes(size_t len, uint8_t *buffer, size_t buflen, uint32_t
   //diagPrintLn(F("readBytes"));
   while (!isTimedOut(ts_max) && len > 0) {
     wdt_reset();
-    int c = _myStream->read();
+    int c = _modemStream->read();
     if (c < 0) {
       continue;
     }
@@ -437,10 +440,10 @@ bool GPRSbeeClass::waitForOK(uint16_t timeout)
       // Skip empty lines
       continue;
     }
-    if (strcmp_P(_SIM900_buffer, PSTR("OK")) == 0) {
+    if (strcmp_P(_inputBuffer, PSTR("OK")) == 0) {
       return true;
     }
-    else if (strcmp_P(_SIM900_buffer, PSTR("ERROR")) == 0) {
+    else if (strcmp_P(_inputBuffer, PSTR("ERROR")) == 0) {
       return false;
     }
     // Other input is skipped.
@@ -457,7 +460,7 @@ bool GPRSbeeClass::waitForMessage(const char *msg, uint32_t ts_max)
       // Skip empty lines
       continue;
     }
-    if (strncmp(_SIM900_buffer, msg, strlen(msg)) == 0) {
+    if (strncmp(_inputBuffer, msg, strlen(msg)) == 0) {
       return true;
     }
   }
@@ -472,7 +475,7 @@ bool GPRSbeeClass::waitForMessage_P(const char *msg, uint32_t ts_max)
       // Skip empty lines
       continue;
     }
-    if (strncmp_P(_SIM900_buffer, msg, strlen_P(msg)) == 0) {
+    if (strncmp_P(_inputBuffer, msg, strlen_P(msg)) == 0) {
       return true;
     }
   }
@@ -488,10 +491,10 @@ int GPRSbeeClass::waitForMessages(PGM_P msgs[], size_t nrMsgs, uint32_t ts_max)
       // Skip empty lines
       continue;
     }
-    //diagPrint(F(" checking \"")); diagPrint(_SIM900_buffer); diagPrintLn("\"");
+    //diagPrint(F(" checking \"")); diagPrint(_inputBuffer); diagPrintLn("\"");
     for (size_t i = 0; i < nrMsgs; ++i) {
       //diagPrint(F("  checking \"")); diagPrint(msgs[i]); diagPrintLn("\"");
-      if (strcmp_P(_SIM900_buffer, msgs[i]) == 0) {
+      if (strcmp_P(_inputBuffer, msgs[i]) == 0) {
         //diagPrint(F("  found i=")); diagPrint((int)i); diagPrintLn("");
         return i;
       }
@@ -515,7 +518,7 @@ bool GPRSbeeClass::waitForPrompt(const char *prompt, uint32_t ts_max)
       break;
     }
 
-    int c = _myStream->read();
+    int c = _modemStream->read();
     if (c < 0) {
       continue;
     }
@@ -549,7 +552,7 @@ bool GPRSbeeClass::waitForPrompt(const char *prompt, uint32_t ts_max)
 void GPRSbeeClass::sendCommandProlog()
 {
   flushInput();
-  mydelay(50);
+  mydelay(50);                  // Without this we get lots of "readLine timed out". Unclear why
   diagPrint(F(">> "));
 }
 
@@ -559,27 +562,27 @@ void GPRSbeeClass::sendCommandProlog()
 void GPRSbeeClass::sendCommandAdd(char c)
 {
   diagPrint(c);
-  _myStream->print(c);
+  _modemStream->print(c);
 }
 void GPRSbeeClass::sendCommandAdd(int i)
 {
   diagPrint(i);
-  _myStream->print(i);
+  _modemStream->print(i);
 }
 void GPRSbeeClass::sendCommandAdd(const char *cmd)
 {
   diagPrint(cmd);
-  _myStream->print(cmd);
+  _modemStream->print(cmd);
 }
 void GPRSbeeClass::sendCommandAdd(const String & cmd)
 {
   diagPrint(cmd);
-  _myStream->print(cmd);
+  _modemStream->print(cmd);
 }
 void GPRSbeeClass::sendCommandAdd_P(const char *cmd)
 {
   diagPrint(reinterpret_cast<const __FlashStringHelper *>(cmd));
-  _myStream->print(reinterpret_cast<const __FlashStringHelper *>(cmd));
+  _modemStream->print(reinterpret_cast<const __FlashStringHelper *>(cmd));
 }
 
 /*
@@ -588,7 +591,7 @@ void GPRSbeeClass::sendCommandAdd_P(const char *cmd)
 void GPRSbeeClass::sendCommandEpilog()
 {
   diagPrintLn();
-  _myStream->print('\r');
+  _modemStream->print('\r');
 }
 
 void GPRSbeeClass::sendCommand(const char *cmd)
@@ -647,7 +650,7 @@ bool GPRSbeeClass::getIntValue(const char *cmd, const char *reply, int * value, 
 
   // First we expect the reply
   if (waitForMessage(reply, ts_max)) {
-    const char *ptr = _SIM900_buffer + strlen(reply);
+    const char *ptr = _inputBuffer + strlen(reply);
     char *bufend;
     *value = strtoul(ptr, &bufend, 0);
     if (bufend == ptr) {
@@ -666,7 +669,7 @@ bool GPRSbeeClass::getIntValue_P(const char *cmd, const char *reply, int * value
 
   // First we expect the reply
   if (waitForMessage_P(reply, ts_max)) {
-    const char *ptr = _SIM900_buffer + strlen_P(reply);
+    const char *ptr = _inputBuffer + strlen_P(reply);
     char *bufend;
     *value = strtoul(ptr, &bufend, 0);
     if (bufend == ptr) {
@@ -702,7 +705,7 @@ bool GPRSbeeClass::getStrValue(const char *cmd, const char *reply, char * str, s
   sendCommand(cmd);
 
   if (waitForMessage(reply, ts_max)) {
-    const char *ptr = _SIM900_buffer + strlen(reply);
+    const char *ptr = _inputBuffer + strlen(reply);
     // Strip leading white space
     while (*ptr != '\0' && *ptr == ' ') {
       ++ptr;
@@ -720,7 +723,7 @@ bool GPRSbeeClass::getStrValue_P(const char *cmd, const char *reply, char * str,
   sendCommand_P(cmd);
 
   if (waitForMessage_P(reply, ts_max)) {
-    const char *ptr = _SIM900_buffer + strlen_P(reply);
+    const char *ptr = _inputBuffer + strlen_P(reply);
     // Strip leading white space
     while (*ptr != '\0' && *ptr == ' ') {
       ++ptr;
@@ -760,7 +763,7 @@ bool GPRSbeeClass::getStrValue(const char *cmd, char * str, size_t size, uint32_
       // Skip empty lines
       continue;
     }
-    strncpy(str, _SIM900_buffer, size - 1);
+    strncpy(str, _inputBuffer, size - 1);
     str[size - 1] = '\0';               // Terminate, just to be sure
     break;
   }
@@ -772,6 +775,70 @@ bool GPRSbeeClass::getStrValue(const char *cmd, char * str, size_t size, uint32_
   return waitForOK();
 }
 
+// Sets the apn, apn username and apn password to the modem.
+bool GPRSbeeClass::sendAPN(const char* apn, const char* username, const char* password)
+{
+    return false;
+}
+
+// Turns on and initializes the modem, then connects to the network and activates the data connection.
+bool GPRSbeeClass::connect(const char* apn, const char* username, const char* password)
+{
+    // TODO
+    return false;
+}
+
+// Returns true if the modem is connected to the network and has an activated data connection.
+bool GPRSbeeClass::isConnected()
+{
+    // TODO
+    return false;
+}
+
+// Disconnects the modem from the network.
+bool GPRSbeeClass::disconnect()
+{
+    // TODO
+    return false;
+}
+
+/*!
+ * \brief Utility function to do waitForSignalQuality and waitForCREG
+ */
+bool GPRSbeeClass::networkOn()
+{
+  bool status;
+  status = on();
+  if (status) {
+    // Suppress echoing
+    switchEchoOff();
+
+    status = waitForSignalQuality();
+    if (status) {
+      status = waitForCREG();
+    }
+  }
+  return status;
+}
+
+// Gets the Received Signal Strength Indication in dBm and Bit Error Rate.
+// Returns true if successful.
+bool GPRSbeeClass::getRSSIAndBER(int8_t* rssi, uint8_t* ber)
+{
+    static char berValues[] = { 49, 43, 37, 25, 19, 13, 7, 0 }; // 3GPP TS 45.008 [20] subclause 8.2.4
+    int rssiRaw = 0;
+    int berRaw = 0;
+    // TODO get BER value
+    if (getIntValue("AT+CSQ", "+CSQ:", &rssiRaw, millis() + 12000 )) {
+        *rssi = ((rssiRaw == 99) ? 0 : -113 + 2 * rssiRaw);
+        *ber = ((berRaw == 99 || static_cast<size_t>(berRaw) >= sizeof(berValues)) ? 0 : berValues[berRaw]);
+
+        return true;
+    }
+
+    return false;
+}
+
 bool GPRSbeeClass::waitForSignalQuality()
 {
   /*
@@ -781,21 +848,20 @@ bool GPRSbeeClass::waitForSignalQuality()
    */
   uint32_t start = millis();
   uint32_t ts_max = start + 30000;
-  int value;
+    int8_t rssi;
+    uint8_t ber;
+
   while (!isTimedOut(ts_max)) {
-    if (getIntValue("AT+CSQ", "+CSQ:", &value, millis() + 12000 )) {
-      if (value >= _minSignalQuality) {
-        _lastCSQ = value;
-        _CSQtime = (int32_t)(millis() - start) / 1000;
+        if (getRSSIAndBER(&rssi, &ber)) {
+            if (rssi != 0 && rssi >= _minSignalQuality) {
+                _lastRSSI = rssi;
+                _CSQtime = (int32_t) (millis() - start) / 1000;
         return true;
       }
     }
-    mydelay(500);
-    if (!isAlive()) {
-      break;
+        /*sodaq_wdt_safe_*/ delay(500);
     }
-  }
-  _lastCSQ = 0;
+    _lastRSSI = 0;
   return false;
 }
 
@@ -817,7 +883,7 @@ bool GPRSbeeClass::waitForCREG()
     // 5 = Registered, roaming
     value = 0;
     if (waitForMessage_P(PSTR("+CREG:"), millis() + 12000)) {
-      const char *ptr = strchr(_SIM900_buffer, ',');
+      const char *ptr = strchr(_inputBuffer, ',');
       if (ptr) {
         ++ptr;
         value = strtoul(ptr, NULL, 0);
@@ -843,6 +909,8 @@ bool GPRSbeeClass::waitForCREG()
  */
 bool GPRSbeeClass::connectProlog()
 {
+  // TODO Use networkOn instead of switchEchoOff, waitForSignalQuality, waitForCREG
+
   // Suppress echoing
   switchEchoOff();
 
@@ -920,9 +988,13 @@ bool GPRSbeeClass::openTCP(const char *apn, const char *apnuser, const char *apn
   strcpy_P(cmdbuf, PSTR("AT+CSTT=\""));
   strcat(cmdbuf, apn);
   strcat(cmdbuf, "\",\"");
+  if (apnuser) {
   strcat(cmdbuf, apnuser);
-  strcat(cmdbuf, "\",\"");
-  strcat(cmdbuf, apnpwd);
+  }
+    strcat(cmdbuf, "\",\"");
+  if (apnpwd) {
+    strcat(cmdbuf, apnpwd);
+  }
   strcat(cmdbuf, "\"");
   if (!sendCommandWaitForOK(cmdbuf)) {
     goto cmd_error;
@@ -987,6 +1059,7 @@ bool GPRSbeeClass::openTCP(const char *apn, const char *apnuser, const char *apn
 
   _transMode = transMode;
   retval = true;
+  _timeToOpenTCP = millis() - _startOn;
   goto ending;
 
 cmd_error:
@@ -1004,7 +1077,7 @@ void GPRSbeeClass::closeTCP()
   // Maybe we should do AT+CIPCLOSE=1
   if (_transMode) {
     mydelay(1000);
-    _myStream->print(F("+++"));
+    _modemStream->print(F("+++"));
     mydelay(500);
     // TODO Will the SIM900 answer with "OK"?
   }
@@ -1030,7 +1103,7 @@ bool GPRSbeeClass::isTCPConnected()
   if (_transMode) {
     // We need to send +++
     mydelay(1000);
-    _myStream->print(F("+++"));
+    _modemStream->print(F("+++"));
     mydelay(500);
     if (!waitForOK()) {
       goto end;
@@ -1049,7 +1122,7 @@ bool GPRSbeeClass::isTCPConnected()
   if (!waitForMessage_P(PSTR("STATE:"), ts_max)) {
     goto end;
   }
-  ptr = _SIM900_buffer + 6;
+  ptr = _inputBuffer + 6;
   ptr = skipWhiteSpace(ptr);
   // Look at the state
   if (strcmp_P(ptr, PSTR("CONNECT OK")) != 0) {
@@ -1072,26 +1145,26 @@ end:
   return retval;
 }
 
-/*
+/*!
  * \brief Send some data over the TCP connection
  */
-bool GPRSbeeClass::sendDataTCP(const uint8_t *data, int data_len)
+bool GPRSbeeClass::sendDataTCP(const uint8_t *data, size_t data_len)
 {
   uint32_t ts_max;
   bool retval = false;
 
-  mydelay(500);
-  flushInput();
-  _myStream->print(F("AT+CIPSEND="));
-  _myStream->println(data_len);
+  sendCommandProlog();
+  sendCommandAdd_P(PSTR("AT+CIPSEND="));
+  sendCommandAdd((int)data_len);
+  sendCommandEpilog();
   ts_max = millis() + 4000;             // Is this enough?
   if (!waitForPrompt("> ", ts_max)) {
     goto error;
   }
-  mydelay(500);           // Wait a little, just to be sure
+  mydelay(50);          // TODO Why do we need this?
   // Send the data
-  for (int i = 0; i < data_len; ++i) {
-    _myStream->print((char)*data++);
+  for (size_t i = 0; i < data_len; ++i) {
+    _modemStream->print((char)*data++);
   }
   //
   ts_max = millis() + 4000;             // Is this enough?
@@ -1107,6 +1180,37 @@ ending:
   return retval;
 }
 
+/*!
+ * \brief Receive a number of bytes from the TCP connection
+ *
+ * If there are not enough bytes then this function will time
+ * out, and it will return false.
+ */
+bool GPRSbeeClass::receiveDataTCP(uint8_t *data, size_t data_len, uint16_t timeout)
+{
+  uint32_t ts_max;
+  bool retval = false;
+
+  //diagPrintLn(F("receiveDataTCP"));
+  ts_max = millis() + timeout;
+  while (data_len > 0 && !isTimedOut(ts_max)) {
+    if (_modemStream->available() > 0) {
+      uint8_t b;
+      b = _modemStream->read();
+      *data++ = b;
+      --data_len;
+    }
+  }
+  if (data_len == 0) {
+    retval = true;
+  }
+
+  return retval;
+}
+
+/*!
+ * \brief Receive a line of ASCII via the TCP connection
+ */
 bool GPRSbeeClass::receiveLineTCP(const char **buffer, uint16_t timeout)
 {
   uint32_t ts_max;
@@ -1118,7 +1222,7 @@ bool GPRSbeeClass::receiveLineTCP(const char **buffer, uint16_t timeout)
   if (readLine(ts_max) < 0) {
     goto ending;
   }
-  *buffer = _SIM900_buffer;
+  *buffer = _inputBuffer;
   retval = true;
 
 ending:
@@ -1236,7 +1340,7 @@ bool GPRSbeeClass::openFTPfile(const char *fname, const char *path)
         continue;
       }
       // Skip 8 for "+FTPPUT:"
-      ptr = _SIM900_buffer + 8;
+      ptr = _inputBuffer + 8;
       ptr = skipWhiteSpace(ptr);
       if (strncmp_P(ptr, PSTR("1,"), 2) != 0) {
         // We did NOT get "+FTPPUT:1,1,", it might be an error.
@@ -1320,9 +1424,9 @@ bool GPRSbeeClass::sendFTPdata_low(uint8_t *buffer, size_t size)
 
   // Send data ...
   for (size_t i = 0; i < size; ++i) {
-    _myStream->print((char)*ptr++);
+    _modemStream->print((char)*ptr++);
   }
-  //_myStream->print('\r');          // dummy <CR>, not sure if this is needed
+  //_modemStream->print('\r');          // dummy <CR>, not sure if this is needed
 
   // Expected reply:
   // +FTPPUT:2,22
@@ -1359,7 +1463,7 @@ bool GPRSbeeClass::sendFTPdata_low(uint8_t (*read)(), size_t size)
   ts_max = millis() + 10000;
   // +FTPPUT:2,22
   if (!waitForMessage_P(PSTR("+FTPPUT:"), ts_max)) {
-    ptr = _SIM900_buffer + 8;
+    ptr = _inputBuffer + 8;
     if (strncmp_P(ptr, PSTR("2,"), 2) != 0) {
       // We did NOT get "+FTPPUT:2,", it might be an error.
       return false;
@@ -1373,7 +1477,7 @@ bool GPRSbeeClass::sendFTPdata_low(uint8_t (*read)(), size_t size)
 
   // Send data ...
   for (size_t i = 0; i < size; ++i) {
-    _myStream->print((char)(*read)());
+    _modemStream->print((char)(*read)());
   }
 
   // Expected reply:
@@ -1465,8 +1569,8 @@ bool GPRSbeeClass::sendSMS(const char *telno, const char *text)
   if (!waitForPrompt("> ", ts_max)) {
     goto cmd_error;
   }
-  _myStream->print(text); //the message itself
-  _myStream->print((char)26); //the ASCII code of ctrl+z is 26, this is needed to end the send modus and send the message.
+  _modemStream->print(text); //the message itself
+  _modemStream->print((char)26); //the ASCII code of ctrl+z is 26, this is needed to end the send modus and send the message.
   if (!waitForOK(30000)) {
     goto cmd_error;
   }
@@ -1549,7 +1653,7 @@ bool GPRSbeeClass::doHTTPPOSTmiddle(const char *url, const char *buffer, size_t 
   // Send data ...
   diagPrintLn("--Sending Data--")
   for (size_t i = 0; i < len; ++i) {
-    _myStream->print(*buffer++);
+    _modemStream->print(*buffer++);
   }
 
   if (!waitForOK()) {
@@ -1704,7 +1808,7 @@ bool GPRSbeeClass::doHTTPREAD(char *buffer, size_t len)
   sendCommand_P(PSTR("AT+HTTPREAD"));
   ts_max = millis() + 8000;
   if (waitForMessage_P(PSTR("+HTTPREAD:"), ts_max)) {
-    const char *ptr = _SIM900_buffer + 10;
+    const char *ptr = _inputBuffer + 10;
     char *bufend;
     getLength = strtoul(ptr, &bufend, 0);
     if (bufend == ptr) {
@@ -1759,7 +1863,7 @@ bool GPRSbeeClass::doHTTPACTION(char num)
     // SIM800 responds with: "+HTTPACTION: 1,200,11"
     // The 12 is the length of "+HTTPACTION:"
     // We then have to skip the digit and the comma
-    const char *ptr = _SIM900_buffer + 12;
+    const char *ptr = _inputBuffer + 12;
     ptr = skipWhiteSpace(ptr);
     ++ptr;              // The digit
     ++ptr;              // The comma
@@ -1979,6 +2083,13 @@ bool GPRSbeeClass::getCIMI(char *buffer, size_t buflen)
   return getStrValue("AT+CIMI", buffer, buflen, ts_max);
 }
 
+bool GPRSbeeClass::getCCID(char *buffer, size_t buflen)
+{
+  switchEchoOff();
+  uint32_t ts_max = millis() + 2000;
+  return getStrValue("AT+CCID", buffer, buflen, ts_max);
+}
+
 bool GPRSbeeClass::getCLIP(char *buffer, size_t buflen)
 {
   switchEchoOff();
@@ -2047,7 +2158,7 @@ bool GPRSbeeClass::setCIURC(uint8_t value)
   switchEchoOff();
   sendCommandProlog();
   sendCommandAdd_P(PSTR("AT+CIURC="));
-  sendCommandAdd(value);
+  sendCommandAdd((int)value);
   sendCommandEpilog();
   return waitForOK();
 }
@@ -2072,7 +2183,7 @@ bool GPRSbeeClass::setCFUN(uint8_t value)
   switchEchoOff();
   sendCommandProlog();
   sendCommandAdd_P(PSTR("AT+CFUN="));
-  sendCommandAdd(value);
+  sendCommandAdd((int)value);
   sendCommandEpilog();
   return waitForOK();
 }
