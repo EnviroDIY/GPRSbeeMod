@@ -97,17 +97,42 @@ private:
   int8_t        _tz;            // timezone (multiple of 15 minutes)
 };
 
+
 // The versions of GPRSBees available
   typedef enum GPRSVersion {
     V04 = 0,
     V06
 } typedev;
 
+// A specialized class to switch on/off the GPRSbee module
+// The VCC3.3 pin is switched by the Autonomo BEE_VCC pin
+// The DTR pin is the actual ON/OFF pin, it is A13 on Autonomo, D20 on Tatu
+class GPRSbeeOnOff : public Sodaq_OnOffBee
+{
+public:
+    GPRSbeeOnOff();
+    void init(int vcc33Pin, int onoff_DTR_pin, int status_CTS_pin, GPRSVersion version = V06);
+    void on();
+    void off();
+    bool isOn();
+private:
+    int8_t _vcc33Pin;
+    int8_t _onoff_DTR_pin;
+    int8_t _status_CTS_pin;
+    GPRSVersion _version;
+};
+
+
 class GPRSbeeClass : public Sodaq_GSM_Modem
 {
 public:
+
+    ///////////////////////////////
+    // Functions for the GPRSBee //
+    ///////////////////////////////
   void init(Stream &stream, int status_CTS_pin, int onoff_DTR_pin,
       int bufferSize=SIM900_DEFAULT_BUFFER_SIZE);
+  void setPowerSwitchedOnOff(bool x);
   void initNdogoSIM800(Stream &stream, int pwrkeyPin, int vbatPin, int status_CTS_pin,
       int bufferSize=SIM900_DEFAULT_BUFFER_SIZE);
   void initAutonomoSIM800(Stream &stream, int vcc33Pin, int onoff_DTR_pin, int status_CTS_pin,
@@ -115,7 +140,7 @@ public:
   void initGPRS(Stream &stream, int vcc33Pin, int onoff_DTR_pin, int status_CTS_pin,
       GPRSVersion version=V06, int bufferSize=SIM900_DEFAULT_BUFFER_SIZE);
 
-  void setSkipCGATT(bool x=true)        { _skipCGATT = x; _changedSkipCGATT = true; }
+  void setSkipCGATT(bool x=true) { _skipCGATT = x; _changedSkipCGATT = true; }
 
   bool networkOn();
 
@@ -168,9 +193,12 @@ public:
 
   bool sendSMS(const char *telno, const char *text);
 
-  /////////////////////
-  // Sodaq_GSM_Modem //
-  /////////////////////
+
+  ///////////////////////////////
+  // Sodaq GSM Modem Functions //
+  ///////////////////////////////
+  // Not all of these functions are implemented in GPRS, and for backwards
+  // compatibility, a few are just references to the functions above.
   uint32_t getDefaultBaudrate() { return 0; }
 
   // Sets the apn, apn username and apn password to the modem.
@@ -228,18 +256,19 @@ public:
   // ==== FTP
 
   bool openFtpConnection(const char* server, const char* username, const char* password, FtpModes ftpMode) { return false; }
-  bool closeFtpConnection() { return false; }
-  bool openFtpFile(const char* filename, const char* path = NULL) { return false; }
+  bool closeFtpConnection() {return closeFTP();}
+  bool openFtpFile(const char* filename, const char* path = NULL)
+    { return openFTPfile(filename, path); }
   bool ftpSend(const char* buffer) { return false; }
-  bool ftpSend(const uint8_t* buffer, size_t size) { return false; }
+  bool ftpSend(const uint8_t* buffer, size_t size) { return sendFTPdata(const_cast<uint8_t*>(buffer), size); }
   int ftpReceive(char* buffer, size_t size) { return 0; }
-  bool closeFtpFile() { return false; }
+  bool closeFtpFile() { return closeFTPfile(); }
 
   // ==== SMS
   int getSmsList(const char* statusFilter = "ALL", int* indexList = NULL, size_t size = 0) { return 0; }
   bool readSms(uint8_t index, char* phoneNumber, char* buffer, size_t size) { return false; }
   bool deleteSms(uint8_t index) { return false; }
-  bool sendSms(const char* phoneNumber, const char* buffer) { return false; }
+  bool sendSms(const char* phoneNumber, const char* buffer) { return sendSMS(phoneNumber, buffer); }
 
   // MQTT (using this class as a transport)
   bool openMQTT(const char * server, uint16_t port = 1883);
@@ -265,17 +294,16 @@ public:
   bool getCOPS(char *buffer, size_t buflen);
   // Sets the sim card clock
   bool setCCLK(const SIMDateTime & dt);
-  // Gets the LOCAL time
+  // Gets the network time
   bool getCCLK(char *buffer, size_t buflen);
   // Gets the service provider name from SIM
   bool getCSPN(char *buffer, size_t buflen);
   // Gets the SIM card group identifier
   bool getCGID(char *buffer, size_t buflen);
-  // Sets initial URC presentation value (0 disables, 1 enables)
+  // Sets/gets initial URC presentation value (0 disables, 1 enables)
   bool setCIURC(uint8_t value);
-  // Gets the initial URC presentation value
   bool getCIURC(char *buffer, size_t buflen);
-  // Sets/Gets the phone functionality mode
+  // Sets/gets the phone functionality mode
   bool setCFUN(uint8_t value);
   bool getCFUN(uint8_t * value);
 
@@ -301,8 +329,6 @@ private:
   void initProlog(Stream &stream, size_t bufferSize);
 
   bool isAlive();
-  bool isOn();
-  void toggle();
 
   void switchEchoOff();
   void flushInput();
@@ -350,6 +376,9 @@ private:
   ResponseTypes readResponse(char* buffer, size_t size, size_t* outSize,
           uint32_t timeout = DEFAULT_READ_MS) { return ResponseNotFound; }
 
+
+  int _onoff_DTR_pin;
+  int _status_CTS_pin;
   size_t _ftpMaxLength;
   bool _transMode;
   bool _skipCGATT;

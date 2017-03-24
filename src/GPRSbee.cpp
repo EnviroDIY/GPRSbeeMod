@@ -39,26 +39,7 @@
 #endif
 
 
-// A specialized class to switch on/off the GPRSbee module
-// The VCC3.3 pin is switched by the Autonomo BEE_VCC pin
-// The DTR pin is the actual ON/OFF pin, it is A13 on Autonomo, D20 on Tatu
-class GPRSbeeOnOff : public Sodaq_OnOffBee
-{
-public:
-    GPRSbeeOnOff();
-    void init(int vcc33Pin, int onoff_DTR_pin, int status_CTS_pin, GPRSVersion version = V06);
-    void on();
-    void off();
-    bool isOn();
-private:
-    int8_t _vcc33Pin;
-    int8_t _onoff_DTR_pin;
-    int8_t _status_CTS_pin;
-    GPRSVersion _version;
-};
-
 static GPRSbeeOnOff gprsbee_onoff;
-
 GPRSbeeClass gprsbee;
 
 /*
@@ -88,14 +69,26 @@ static inline void mydelay(unsigned long nrMillis)
  * The pinmode of the pins are setup. The output pins get their default
  * value.
  *
- * There are a few different methods to switch on the SIM900.
- * 1) The "old fashioned" method is to just toggle the /DTR port of the Bee slot.
- * This assumes that the Bee has continuous power.
- * 2) The SODAQ Mbili has a switched power (JP2) that can be jumpered to power the GPRSbee
- * and the same digital output connected to the /DTR of the Bee slot
- * 3) the SODAQ Ndogo has a switched VBAT to power the SIM800 and a digital pin to
- * toggle the PWRKEY of the SIM800
+ * There are a few different methods to switch on the GPRSBee, depending on the
+ * version and the power options.  In short, you first need to provide power to
+ * the Bee, if it is not continuously powered.  Then you need to toggle the /DTR
+ * pin to actually switch it on.
+ * For a v0.4 (SIM900) GPRSBee, the /DTR pin must be toggled LOW->HIGH->LOW to
+ * turn the Bee on, and then the same sequence to turn it off.
+ * For a v0.6 (SIM800) GPRSBee, the /DTR pin must be be set HIGH to turn the
+ * Bee on, and then left high for the duration of communications.  It is turned
+ * off by setting the /DTR pin LOW.
+ * After the Bee itself has been turned off, the power to it can be cut, if it
+ * is not continuously powered.
+ *
+ * For backwards compatibility, there are several different init functions, which
+ * are based on whether the power can be toggled on or off to the GPRSBee and which
+ * version of the Bee is attached.
  */
+
+
+// This is "old fashioned" method, originally for an unmodified Mbili.
+// This assumes that the you have a v0.4 GPRSBee with continuous power.
 void GPRSbeeClass::init(Stream &stream, int status_CTS_pin, int onoff_DTR_pin,
     int bufferSize)
 {
@@ -103,8 +96,23 @@ void GPRSbeeClass::init(Stream &stream, int status_CTS_pin, int onoff_DTR_pin,
 
     gprsbee_onoff.init(-1, onoff_DTR_pin, status_CTS_pin, V04);
     _onoff = &gprsbee_onoff;
+    _onoff_DTR_pin = onoff_DTR_pin;
+    _status_CTS_pin = status_CTS_pin;
 }
 
+// This does not look like an init method, but is included for backwards
+// compatibility.  It was intended for a SODAQ Mbili where the switched power
+// on JP2 has been jumpered to power the GPRSbee and the same digital output
+// connected to the /DTR of the Bee slot.  Because the /DTR and power are on the
+// same pin, you cannot use the LOW->HIGH->LOW on the /DTR that you would
+// normally use with a v0.4 GPRSBee, but instead just start the power.
+void GPRSbeeClass::setPowerSwitchedOnOff(bool x)
+{
+    gprsbee_onoff.init(_onoff_DTR_pin, -1, _status_CTS_pin, V04);
+}
+
+// This is the "Ndogo" method.  This assumes that the power to the Bee can be
+// set separately from turning the Bee on and that you have a v0.4 GPRSBee.
 void GPRSbeeClass::initNdogoSIM800(Stream &stream, int pwrkeyPin, int vbatPin, int status_CTS_pin,
     int bufferSize)
 {
@@ -114,6 +122,8 @@ void GPRSbeeClass::initNdogoSIM800(Stream &stream, int pwrkeyPin, int vbatPin, i
     _onoff = &gprsbee_onoff;
 }
 
+// This is the "Autonomo" method.  This assumes that the power to the Bee can be
+// set separately from turning the Bee on and that you have a v0.6 GPRSBee.
 void GPRSbeeClass::initAutonomoSIM800(Stream &stream, int vcc33Pin, int onoff_DTR_pin, int status_CTS_pin,
     int bufferSize)
 {
@@ -123,6 +133,9 @@ void GPRSbeeClass::initAutonomoSIM800(Stream &stream, int vcc33Pin, int onoff_DT
     _onoff = &gprsbee_onoff;
 }
 
+// This is a new generic init method that allows you to specify separately whether
+// there is a pin controlling the power to the GPRSBee, which pins connect to the
+// DTR and CTS, and the GPRSBee version.
 void GPRSbeeClass::initGPRS(Stream &stream, int vcc33Pin, int onoff_DTR_pin, int status_CTS_pin,
      GPRSVersion version /* = V06*/, int bufferSize /* = SIM900_DEFAULT_BUFFER_SIZE*/)
 {
@@ -638,15 +651,15 @@ bool GPRSbeeClass::connect(const char* apn, const char* username, const char* pa
     return false;
 }
 
-// Returns true if the modem is connected to the network and has an activated data connection.
-bool GPRSbeeClass::isConnected()
+// Disconnects the modem from the network.
+bool GPRSbeeClass::disconnect()
 {
     // TODO
     return false;
 }
 
-// Disconnects the modem from the network.
-bool GPRSbeeClass::disconnect()
+// Returns true if the modem is connected to the network and has an activated data connection.
+bool GPRSbeeClass::isConnected()
 {
     // TODO
     return false;
@@ -759,18 +772,8 @@ bool GPRSbeeClass::waitForCREG()
  */
 bool GPRSbeeClass::connectProlog()
 {
-  // TODO Use networkOn instead of switchEchoOff, waitForSignalQuality, waitForCREG
-
-  // Suppress echoing
-  switchEchoOff();
-
-  // Wait for signal quality
-  if (!waitForSignalQuality()) {
-    return false;
-  }
-
-  // Wait for CREG
-  if (!waitForCREG()) {
+  // Turn on the network
+  if (!networkOn()) {
     return false;
   }
 
@@ -1393,20 +1396,8 @@ bool GPRSbeeClass::sendSMS(const char *telno, const char *text)
   uint32_t ts_max;
   bool retval = false;
 
-  if (!on()) {
-    goto ending;
-  }
-
-  // Suppress echoing
-  switchEchoOff();
-
-  // Wait for signal quality
-  if (!waitForSignalQuality()) {
-    goto cmd_error;
-  }
-
-  // Wait for CREG
-  if (!waitForCREG()) {
+  // Wait for Network
+  if (!networkOn()) {
     goto cmd_error;
   }
 
@@ -2518,4 +2509,14 @@ void GPRSbeeOnOff::off()
             }
         }
     }
+}
+
+bool GPRSbeeOnOff::isOn()
+{
+    if (_status_CTS_pin >= 0) {
+        bool status = digitalRead(_status_CTS_pin);
+        return status;
+    }
+    // No status pin. Let's assume it is on.
+    return true;
 }
