@@ -641,13 +641,35 @@ bool GPRSbeeClass::getStrValue(const char *cmd, char * str, size_t size, uint32_
 // Sets the apn, apn username and apn password to the modem.
 bool GPRSbeeClass::sendAPN(const char* apn, const char* username, const char* password)
 {
-    return false;
+    return setBearerParms(apn, username, password);
 }
 
 // Turns on and initializes the modem, then connects to the network and activates the data connection.
 bool GPRSbeeClass::connect(const char* apn, const char* username, const char* password)
 {
-    // TODO
+    if (!on()) {
+      goto ending;
+    }
+
+    if (!connectProlog()) {
+      goto cmd_error;
+    }
+
+    if (!connectProlog()) {
+      goto cmd_error;
+    }
+
+    if (!setBearerParms(apn, username, password)) {
+      goto cmd_error;
+    }
+
+    return true;
+
+    cmd_error:
+    diagPrintLn(F("Network connection failed!"));
+    off();
+
+    ending:
     return false;
 }
 
@@ -1150,11 +1172,19 @@ ending:
   return false;
 }
 
+bool GPRSbeeClass::openFtpConnection(const char* server, const char* username, const char* password, FtpModes ftpMode)
+{
+  return openFTP(_apn, 0, 0, server, username, password);
+}
+
 bool GPRSbeeClass::closeFTP()
 {
   off();            // Ignore errors
   return true;
 }
+
+bool GPRSbeeClass::closeFtpConnection()
+ {return closeFTP();}
 
 /*
  * \brief Open a (FTP) session (one file)
@@ -1224,6 +1254,8 @@ bool GPRSbeeClass::openFTPfile(const char *fname, const char *path)
 ending:
   return false;
 }
+bool GPRSbeeClass::openFtpFile(const char* filename, const char* path)
+  { return openFTPfile(filename, path); }
 
 bool GPRSbeeClass::closeFTPfile()
 {
@@ -1251,6 +1283,8 @@ bool GPRSbeeClass::closeFTPfile()
 
   return true;
 }
+bool GPRSbeeClass::closeFtpFile()
+{ return closeFTPfile(); }
 
 /*
  * \brief Lower layer function to insert a number of bytes in the FTP session
@@ -1389,6 +1423,9 @@ bool GPRSbeeClass::sendFTPdata(uint8_t (*read)(), size_t size)
   }
   return true;
 }
+bool GPRSbeeClass::ftpSend(const uint8_t* buffer, size_t size)
+ { return sendFTPdata(const_cast<uint8_t*>(buffer), size); }
+
 
 bool GPRSbeeClass::sendSMS(const char *telno, const char *text)
 {
@@ -1851,17 +1888,30 @@ ending:
 
 
 size_t GPRSbeeClass::httpRequest(const char* url, uint16_t port,
-        const char* endpoint, HttpRequestTypes requestType = GET,
-        char* responseBuffer = NULL, size_t responseSize = 0,
-        const char* sendBuffer = NULL, size_t sendSize = 0)
+        const char* endpoint, HttpRequestTypes requestType,
+        char* responseBuffer, size_t responseSize,
+        const char* sendBuffer, size_t sendSize)
 {
-    switch requestType
+    if (!strcmp(_apn,""))
     {
-        case GET
+        switch (requestType)
         {
-
+            case GET:
+            {
+                doHTTPGET(const_cast<char*>(_apn), url, responseBuffer, responseSize);
+            }
+            case POST:
+            {
+                if (responseBuffer != NULL)
+                {doHTTPPOST(const_cast<char*>(_apn), url, sendBuffer, sendSize);}
+                else
+                {doHTTPPOSTWithReply(const_cast<char*>(_apn), url, sendBuffer, sendSize, responseBuffer, responseSize);}
+            }
+            default:
+            {diagPrintLn(F("HTTP Request failed!"));}
         }
     }
+    return 0;
 }
 
 

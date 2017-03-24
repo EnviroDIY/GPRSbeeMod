@@ -204,7 +204,9 @@ public:
   ///////////////////////////////
   // These functions are needed to complete the virtual functions in the GSM Modem class
   // Not all of these functions are implemented in GPRS, and for backwards
-  // compatibility, a few are just references to the functions above.
+  // compatibility, many are just references to the functions above.  (ie, the
+  // functions above could have been re-named, but instead of doing that, they
+  // are referenced here.)
   uint32_t getDefaultBaudrate() { return 0; }
 
   // Sets the apn, apn username and apn password to the modem.
@@ -258,21 +260,20 @@ public:
   size_t httpRequest(const char* url, uint16_t port,
           const char* endpoint, HttpRequestTypes requestType = GET,
           char* responseBuffer = NULL, size_t responseSize = 0,
-          const char* sendBuffer = NULL, size_t sendSize = 0) { return 0; }
+          const char* sendBuffer = NULL, size_t sendSize = 0);
 
   // ==== TCP
   // All functions implemented above
 
   // ==== FTP
 
-  bool openFtpConnection(const char* server, const char* username, const char* password, FtpModes ftpMode) { return false; }
-  bool closeFtpConnection() {return closeFTP();}
-  bool openFtpFile(const char* filename, const char* path = NULL)
-    { return openFTPfile(filename, path); }
-  bool ftpSend(const char* buffer) { return false; }
-  bool ftpSend(const uint8_t* buffer, size_t size) { return sendFTPdata(const_cast<uint8_t*>(buffer), size); }
-  int ftpReceive(char* buffer, size_t size) { return 0; }
-  bool closeFtpFile() { return closeFTPfile(); }
+  bool openFtpConnection(const char* server, const char* username, const char* password, FtpModes ftpMode);
+  bool closeFtpConnection();
+  bool openFtpFile(const char* filename, const char* path = NULL);
+  bool ftpSend(const char* buffer) { return false; }  // NOT IMPLEMENTED
+  bool ftpSend(const uint8_t* buffer, size_t size);
+  int ftpReceive(char* buffer, size_t size) { return 0; }  // NOT IMPLEMENTED
+  bool closeFtpFile();
 
   // ==== SMS
   int getSmsList(const char* statusFilter = "ALL", int* indexList = NULL, size_t size = 0) { return 0; }
