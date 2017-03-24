@@ -127,9 +127,12 @@ class GPRSbeeClass : public Sodaq_GSM_Modem
 {
 public:
 
-    ///////////////////////////////
-    // Functions for the GPRSBee //
-    ///////////////////////////////
+  ////////////////////////////////////////////
+  // Higher Level Functions for the GPRSBee //
+  ////////////////////////////////////////////
+  // These are functions unique to the GPRSBee, not the GSM Modem class
+  // Some are essentially identical to GSM Modem class functions, but with
+  // different names.  For historical reasons, they are maintained.
   void init(Stream &stream, int status_CTS_pin, int onoff_DTR_pin,
       int bufferSize=SIM900_DEFAULT_BUFFER_SIZE);
   void setPowerSwitchedOnOff(bool x);
@@ -140,38 +143,37 @@ public:
   void initGPRS(Stream &stream, int vcc33Pin, int onoff_DTR_pin, int status_CTS_pin,
       GPRSVersion version=V06, int bufferSize=SIM900_DEFAULT_BUFFER_SIZE);
 
+  // Allow to skip connecting to the GPRS Service
   void setSkipCGATT(bool x=true) { _skipCGATT = x; _changedSkipCGATT = true; }
 
+  // Verifies the GPRSBee is on, there is sufficient signal, and you have
+  // successfully registered on the network
   bool networkOn();
 
+  // Allows to set headers for tokens, security, etc
   void addHTTPHeaders(const String headers) { _HTTPHeaders = headers; }
+  // Allows to set content type for posts
   void addContentType(const String content) { _contentType = content; }
 
+  // HTTP POST Requests, no reply desired
   bool doHTTPPOST(const char *apn, const char *url, const char *postdata, size_t pdlen);
   bool doHTTPPOST(const char *apn, const String & url, const char *postdata, size_t pdlen);
   bool doHTTPPOST(const char *apn, const char *apnuser, const char *apnpwd,
       const char *url, const char *postdata, size_t pdlen);
-  bool doHTTPPOSTmiddle(const char *url, const char *postdata, size_t pdlen);
-  bool doHTTPPOSTmiddleWithReply(const char *url, const char *postdata, size_t pdlen, char *buffer, size_t len);
 
+  // HTTP POST Requests, with reply
   bool doHTTPPOSTWithReply(const char *apn, const char *url, const char *postdata, size_t pdlen, char *buffer, size_t len);
   bool doHTTPPOSTWithReply(const char *apn, const String & url, const char *postdata, size_t pdlen, char *buffer, size_t len);
   bool doHTTPPOSTWithReply(const char *apn, const char *apnuser, const char *apnpwd,
       const char *url, const char *postdata, size_t pdlen, char *buffer, size_t len);
 
+  // HTTP Get Requests
   bool doHTTPGET(const char *apn, const char *url, char *buffer, size_t len);
   bool doHTTPGET(const char *apn, const String & url, char *buffer, size_t len);
   bool doHTTPGET(const char *apn, const char *apnuser, const char *apnpwd,
       const char *url, char *buffer, size_t len);
-  bool doHTTPGETmiddle(const char *url, char *buffer, size_t len);
 
-  bool doHTTPREAD(char *buffer, size_t len);
-  bool doHTTPACTION(char num);
-
-  bool doHTTPprolog(const char *apn);
-  bool doHTTPprolog(const char *apn, const char *apnuser, const char *apnpwd);
-  void doHTTPepilog();
-
+  // TCP Connections
   bool openTCP(const char *apn, const char *server, int port, bool transMode=false);
   bool openTCP(const char *apn, const char *apnuser, const char *apnpwd,
       const char *server, int port, bool transMode=false);
@@ -181,6 +183,7 @@ public:
   bool receiveDataTCP(uint8_t *data, size_t data_len, uint16_t timeout=4000);
   bool receiveLineTCP(const char **buffer, uint16_t timeout=4000);
 
+// FTP Connections
   bool openFTP(const char *apn, const char *server,
       const char *username, const char *password);
   bool openFTP(const char *apn, const char *apnuser, const char *apnpwd,
@@ -191,12 +194,15 @@ public:
   bool sendFTPdata(uint8_t (*read)(), size_t size);
   bool closeFTPfile();
 
+  // SMS (Text Messages)
   bool sendSMS(const char *telno, const char *text);
+
 
 
   ///////////////////////////////
   // Sodaq GSM Modem Functions //
   ///////////////////////////////
+  // These functions are needed to complete the virtual functions in the GSM Modem class
   // Not all of these functions are implemented in GPRS, and for backwards
   // compatibility, a few are just references to the functions above.
   uint32_t getDefaultBaudrate() { return 0; }
@@ -239,6 +245,7 @@ public:
   IP_t getHostIP(const char* host) { return 0; }
 
   // ==== Sockets
+  // None are implemented for GPRS
 
   int createSocket(Protocols protocol, uint16_t localPort = 0) { return false; }
   bool connectSocket(uint8_t socket, const char* host, uint16_t port) { return false; }
@@ -252,6 +259,9 @@ public:
           const char* endpoint, HttpRequestTypes requestType = GET,
           char* responseBuffer = NULL, size_t responseSize = 0,
           const char* sendBuffer = NULL, size_t sendSize = 0) { return 0; }
+
+  // ==== TCP
+  // All functions implemented above
 
   // ==== FTP
 
@@ -275,6 +285,13 @@ public:
   bool closeMQTT(bool switchOff=true);
   bool sendMQTTPacket(uint8_t * pckt, size_t len);
   bool receiveMQTTPacket(uint8_t * pckt, size_t expected_len);
+
+
+
+  ////////////////////////////////////////////
+  // Lower Level Functions for the GPRSBee //
+  ////////////////////////////////////////////
+  // These are functions unique to the GPRSBee, not the GSM Modem class.
 
   // Gets device IMEI number
   bool getIMEI(char *buffer, size_t buflen);
@@ -300,18 +317,24 @@ public:
   bool getCSPN(char *buffer, size_t buflen);
   // Gets the SIM card group identifier
   bool getCGID(char *buffer, size_t buflen);
-  // Sets/gets initial URC presentation value (0 disables, 1 enables)
+  // Sets/gets Unsolicited Result Codes (URC) presentation value (0 disables, 1 enables)
   bool setCIURC(uint8_t value);
   bool getCIURC(char *buffer, size_t buflen);
   // Sets/gets the phone functionality mode
   bool setCFUN(uint8_t value);
   bool getCFUN(uint8_t * value);
 
-  void enableCIURC();
-  void disableCIURC();
+  // Enables/disables the local time stamp functions
+  // When these are enabled getCCLK can be used to get the network time
   void enableLTS();
   void disableLTS();
+  // Enables/disables initial Unsolicited Result Codes (URC) presentation value
+  // These functions are equivalent to using setCUIRC(1) and setCUIRC(0)
+  void enableCIURC();
+  void disableCIURC();
 
+  // Basic functions to send an AT command to the SIM and wait for it
+  // to return an OK
   bool sendCommandWaitForOK(const char *cmd, uint16_t timeout=4000);
   bool sendCommandWaitForOK(const String & cmd, uint16_t timeout=4000);
   bool sendCommandWaitForOK_P(const char *cmd, uint16_t timeout=4000);
@@ -324,6 +347,19 @@ public:
   // Getters of diagnostic values
   uint32_t getTimeToOpenTCP() { return _timeToOpenTCP; }
   uint32_t getTimeToCloseTCP() { return _timeToCloseTCP; }
+
+
+  // Middle functions unlikely to be needed, but left public
+  bool doHTTPPOSTmiddle(const char *url, const char *postdata, size_t pdlen);
+  bool doHTTPPOSTmiddleWithReply(const char *url, const char *postdata, size_t pdlen, char *buffer, size_t len);
+  bool doHTTPGETmiddle(const char *url, char *buffer, size_t len);
+
+  bool doHTTPREAD(char *buffer, size_t len);
+  bool doHTTPACTION(char num);
+
+  bool doHTTPprolog(const char *apn);
+  bool doHTTPprolog(const char *apn, const char *apnuser, const char *apnpwd);
+  void doHTTPepilog();
 
 private:
   void initProlog(Stream &stream, size_t bufferSize);

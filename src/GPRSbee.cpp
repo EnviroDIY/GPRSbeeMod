@@ -1848,6 +1848,24 @@ ending:
   return retval;
 }
 
+
+
+size_t GPRSbeeClass::httpRequest(const char* url, uint16_t port,
+        const char* endpoint, HttpRequestTypes requestType = GET,
+        char* responseBuffer = NULL, size_t responseSize = 0,
+        const char* sendBuffer = NULL, size_t sendSize = 0)
+{
+    switch requestType
+    {
+        case GET
+        {
+
+        }
+    }
+}
+
+
+
 bool GPRSbeeClass::setBearerParms(const char *apn, const char *user, const char *pwd)
 {
   char cmd[64];
@@ -2098,6 +2116,7 @@ void GPRSbeeClass::setProductId()
   }
 }
 
+// Just a helper function to remove extra space in commands
 const char * GPRSbeeClass::skipWhiteSpace(const char * txt)
 {
   while (*txt != '\0' && *txt == ' ') {
