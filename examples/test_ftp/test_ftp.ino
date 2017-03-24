@@ -1,5 +1,4 @@
 #include <GPRSbee.h>
-#include "Diag.h"
 
 #define APN "yourAPNhere"
 #define SERVER "ftp.yourserverhere"
@@ -7,38 +6,16 @@
 #define PASSWORD "password"
 #define FTPPATH "/"
 
-
-#define GPRSBEE_PWRPIN  7
-#define XBEECTS_PIN     8
-
-// Only needed if DIAG is enabled
-#define DIAGPORT_RX     4
-#define DIAGPORT_TX     5
-
-//#########       diag      #############
-#ifdef ENABLE_DIAG
-#if defined(UBRRH) || defined(UBRR0H)
-// There probably is no other Serial port that we can use
-// Use a Software Serial instead
-#include <SoftwareSerial.h>
-SoftwareSerial diagport(DIAGPORT_RX, DIAGPORT_TX);
-#else
-#define diagport Serial;
-#endif
-#endif
+int BEE_VCC_PIN = -1;
+int BEE_DTR_PIN = 23;  // Bee DTR Pin (Data Terminal Ready - used to turn on/off)
+int BEE_CTS_PIN = 19;   // Bee CTS Pin (Clear to Send)
 
 void setup()
 {
-  Serial.begin(19200);          // Serial is connected to SIM900 GPRSbee
-  gprsbee.init(Serial, XBEECTS_PIN, GPRSBEE_PWRPIN);
-
-#ifdef ENABLE_DIAG
-  diagport.begin(9600);
-  gprsbee.setDiag(diagport);
-#endif
-  DIAGPRINTLN("Program start in 4 seconds");
-  DIAGPRINTLN("You must disconnect the USB port because it");
-  DIAGPRINTLN("uses the same RX/TX as the GPRSbee.");
+  Serial.begin(9600);
+  Serial1.begin(9600);
+  gprsbee.initGPRS(Serial1, BEE_VCC_PIN, BEE_CTS_PIN, BEE_DTR_PIN, V04);
+  gprsbee.setDiag(Serial); // To see for debugging
 
   delay(4000);
   if (!gprsbee.openFTP(APN, SERVER, USERNAME, PASSWORD)) {
@@ -74,11 +51,10 @@ void setup()
     return;
   }
 
-  DIAGPRINTLN("That's all folks.");
+  Serial.println("That's all folks.");
 }
 
 void loop()
 {
   // Do nothing in this simple example.
 }
-

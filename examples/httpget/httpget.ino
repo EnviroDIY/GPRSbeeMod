@@ -18,35 +18,20 @@
 #include <GPRSbee.h>
 #include <Wire.h>
 
-// Our own libraries
-#include "Diag.h"
+int BEE_VCC_PIN = -1;
+int BEE_DTR_PIN = 23;  // Bee DTR Pin (Data Terminal Ready - used to turn on/off)
+int BEE_CTS_PIN = 19;   // Bee CTS Pin (Clear to Send)
 
-#define GPRSBEE_PWRPIN  7
-#define XBEECTS_PIN     8
-
-// Only needed if DIAG is enabled
-#define DIAGPORT_RX     4
-#define DIAGPORT_TX     5
-
-//#########       diag      #############
-#ifdef ENABLE_DIAG
-#include <SoftwareSerial.h>
-SoftwareSerial diagport(DIAGPORT_RX, DIAGPORT_TX);
-#endif
 
 //######### forward declare #############
 void syncRTCwithServer();
 
 void setup()
 {
-  Serial.begin(19200);          // Serial is connected to SIM900 GPRSbee
-  gprsbee.init(Serial, XBEECTS_PIN, GPRSBEE_PWRPIN);
-
-#ifdef ENABLE_DIAG
-  diagport.begin(9600);
-  gprsbee.setDiag(diagport);
-#endif
-  DIAGPRINTLN(F("Program start"));
+  Serial.begin(9600);
+  Serial1.begin(9600);
+  gprsbee.initGPRS(Serial1, BEE_VCC_PIN, BEE_CTS_PIN, BEE_DTR_PIN, V04);
+  gprsbee.setDiag(Serial); // To see for debugging
   Serial.println(F("Program start"));
 
   // Make sure the GPRSbee is switched off
@@ -66,7 +51,8 @@ void syncRTCwithServer()
 {
   char buffer[20];
   if (gprsbee.doHTTPGET(APN, TIMEURL, buffer, sizeof(buffer))) {
-    DIAGPRINT("HTTP GET: "); DIAGPRINTLN(buffer);
+    Serial.print("HTTP GET: ");
+    Serial.println(buffer);
     char *ptr;
     uint32_t newTs = strtoul(buffer, &ptr, 0);
     // Tweak the timestamp a little because doHTTPGET took a few second
@@ -76,10 +62,10 @@ void syncRTCwithServer()
       uint32_t oldTs = rtc.now().getEpoch();
       int32_t diffTs = abs(newTs - oldTs);
       if (diffTs > 30) {
-        DIAGPRINT("Updating RTC, old=");
-        DIAGPRINT(oldTs);
-        DIAGPRINT(" new=");
-        DIAGPRINTLN(newTs);
+        Serial.print("Updating RTC, old=");
+        Serial.print(oldTs);
+        Serial.print(" new=");
+        Serial.println(newTs);
         rtc.setEpoch(newTs);
       }
     }

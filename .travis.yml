@@ -9,12 +9,13 @@ cache:
 
 env:
     - PLATFORMIO_CI_SRC=examples/httpget/httpget.ino
+    - PLATFORMIO_CI_SRC=examples/httppost/httppost.ino
     - PLATFORMIO_CI_SRC=examples/test_ftp/test_ftp.ino
-    - PLATFORMIO_CI_SRC=examples/sodaq_wunderground/sodaq_wunderground.ino
 
 install:
     - pip install -U platformio
     - platformio update
+    - pio lib -g install https://github.com/EnviroDIY/Sodaq_DS3231.git
 
 script:
-    - platformio ci --lib="." --lib="examples/sodaq_wunderground/" --board=mayfly --board=sodaq_mbili  --board=sodaq_ndogo  --board=sodaq_autonomo
+    - platformio ci --lib="." --board=mayfly --board=sodaq_mbili  --board=sodaq_ndogo  --board=sodaq_autonomo
