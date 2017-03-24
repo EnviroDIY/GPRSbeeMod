@@ -2520,6 +2520,7 @@ void GPRSbeeOnOff::on()
 
     switch (_version) {
         case V06:
+        case V05:
         {
             // Wait a little
             // TODO Figure out if this is really needed
@@ -2553,6 +2554,7 @@ void GPRSbeeOnOff::off()
 
     switch (_version) {
         case V06:
+        case V05:
         {
             // The GPRSbee is switched off immediately
             if (_onoff_DTR_pin >= 0) {

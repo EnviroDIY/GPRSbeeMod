@@ -1,55 +1,40 @@
 # GPRSbee
 
-This is the Arduino library for GPRSbee.
+This is the Arduino library for the [GPRSbee](http://gprsbee.com/).  The GPRSbee is made by [Sodaq](http://sodaq.com/) and can be purchased either directly through the [Sodaq store](https://shop.sodaq.com/en/gprsbee.html) or through [seeed studio](https://www.seeedstudio.com/GPRSbee-rev.-6-p-2445.html).
 
-This branch has Sodaq's version 1.2 of the library, which has then been modified to call Serial1.begin/end directly, according to what Gabriel Notman did here:  https://github.com/GabrielNotman/AutonomoTesting/commit/9bc57730b11b1acabe904eb2b8cd055470d2f8bc
+This library implements most of the functions of the Sodaq_GSM_Modem class, and a number of others besides.  It is slightly clunkier than strictly necessary to maintain both backward and forward compatibility.
 
-## HTTP GET Methods
 
-There is a group of functions to do a http GET. The main function is
-doHTTPGET.  There are also lower level functions which you may need
-when you want to do special things.  For example if you want to do
-multiple GETs in a row you can use the following sequence:
-```c
-  on
-  doHTTPprolog
-  doHTTPGETmiddle
-  doHTTPGETmiddle
-  doHTTPGETmiddle
-  doHTTPGETmiddle
-  doHTTPepilog
-  off
+## Initializing the GPRSbee
+To use the GPRSbee, you must first begin the stream instance that will communicate with the bee and then call the initialization function.  Generally both of these things should be called from the setup() of an arduino program.  For backwards compatibility, there are several different init functions, which are based on whether the power can be toggled on or off to the GPRSBee and which version of the Bee is attached.  All older versions of the On-Off methods are supported!  (toggle, mbili_jp2, Ndogo, and Autonomo)
+
+The general initialization method for any device or version of the bee is:
+```cpp
+initGPRS(Stream &stream, int vcc33Pin, int onoff_DTR_pin, int status_CTS_pin,
+    GPRSVersion version, int bufferSize)
 ```
-The function doHTTPGETmiddle does the actual GET.
+The GPRSVersion can be V04 (rev 4), V05, or V06.  The default buffer size is 64.  If the GPRSbee is continuously powered by your device, enter -1 for the vcc33Pin.  If the power pin and the DTR pin are the same pin, use that single pin number as the vcc33Pin and enter -1 for the onoff_DTR_pin.
+
+## Using the GPRS modem
+This library enables the GPRSbee to open TCP connections, open and read FTP files, attach HTTP headers, send HTTP GET and POST requests, and send SMS messages.  It can also access SIM card functions like checking the current network time. Examples are available in the examples folder and in the [wiki](https://github.com/SodaqMoja/GPRSbee/wiki).
 
 
-Another example to use these lower level GET functions is if you want
-to keep the GPRS connection up.
+## Lower level methods
 
-## On-Off Methods
-
-There are two methods to switch on the GPRSbee.  The "old" method
-is to toggle DTR.  It toggles the on-off state of the SIM900.  The
-"new" method is to switch the power supply of GPRSbee.  This new
-method is only supported by SODAQ Mbili.  This board has a JP2
-conector which is switched on by setting D23 to HIGH.
-
-### The On-Off Toggle Method
-
-The power (battery) connections are as follows:
-* connect battery to one of the GPRSbee power
-* connect other GPRSbee power to the LiPo connector of the SODAQ board
-
-By default the GPRSbee library supports this mode.
-
-### The Switched Power Method
-
-( Not supported by SODAQ Moja )
-The power (battery) connections are as follows:
-* connect the battery to the LiPo connector of the SODAQ board
-* connect SODAQ JP2 to one of the power connectors of GPRSbee
-
-To enable this mode to must add the following in your setup() code
-```c
-    gprsbee.setPowerSwitchedOnOff(true);
+There are a group of functions behind all of the http methods. These can be accessed when you want to do special things.  For example if you want to do multiple GETs in a row without turning the bee on and off and waiting for it to initialize, you can use the following sequence:
+```cpp
+  gprsbee.on();
+  gprsbee.doHTTPprolog(const char *apn);
+  gprsbee.doHTTPGETmiddle(const char *url1, char *buffer1, size_t len);
+  gprsbee.doHTTPGETmiddle(const char *url2, char *buffer2, size_t len);
+  gprsbee.doHTTPGETmiddle(const char *url3, char *buffer3, size_t len);
+  gprsbee.doHTTPGETmiddle(const char *url4, char *buffer4, size_t len);
+  gprsbee.doHTTPepilog();
+  gprsbee.off();
 ```
+
+These lower level GET functions can also be used to keep the GPRS connection up.
+
+
+## Direct AT commands
+Direct AT commands can also be sent to the SIM card by calling sendCommandWaitForOK(string or char).

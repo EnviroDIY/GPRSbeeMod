@@ -101,6 +101,7 @@ private:
 // The versions of GPRSBees available
   typedef enum GPRSVersion {
     V04 = 0,
+    V05,
     V06
 } typedev;
 
