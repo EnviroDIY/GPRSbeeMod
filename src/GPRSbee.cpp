@@ -152,7 +152,7 @@ void GPRSbeeClass::initProlog(Stream &stream, size_t bufferSize)
 
   _modemStream = &stream;
   _diagStream = 0;
-  _minSignalQuality = 10;
+  _minRSSI = 10;
   _ftpMaxLength = 0;
   _transMode = false;
 
@@ -645,7 +645,7 @@ bool GPRSbeeClass::sendAPN(const char* apn, const char* username, const char* pa
 }
 
 // Turns on and initializes the modem, then connects to the network and activates the data connection.
-bool GPRSbeeClass::connect(const char* apn, const char* username, const char* password)
+bool GPRSbeeClass::connect(void)
 {
     if (!on()) {
       goto ending;
@@ -659,7 +659,7 @@ bool GPRSbeeClass::connect(const char* apn, const char* username, const char* pa
       goto cmd_error;
     }
 
-    if (!setBearerParms(apn, username, password)) {
+    if (!setBearerParms(_apn, _apnUser, _apnPass)) {
       goto cmd_error;
     }
 
@@ -685,6 +685,24 @@ bool GPRSbeeClass::isConnected()
 {
     // TODO
     return false;
+}
+
+/*
+ * The range is the following:
+ *   0: -113 dBm or less
+ *   1: -111 dBm
+ *   2..30: from -109 to -53 dBm with 2 dBm steps
+ *   31: -51 dBm or greater
+ *   99: not known or not detectable or currently not available
+ */
+int8_t GPRSbeeClass::convertCSQ2RSSI(uint8_t csq) const
+{
+    return -113 + 2 * csq;
+}
+
+uint8_t GPRSbeeClass::convertRSSI2CSQ(int8_t rssi) const
+{
+    return (rssi + 113) / 2;
 }
 
 /*!
@@ -738,7 +756,7 @@ bool GPRSbeeClass::waitForSignalQuality()
 
   while (!isTimedOut(ts_max)) {
         if (getRSSIAndBER(&rssi, &ber)) {
-            if (rssi != 0 && rssi >= _minSignalQuality) {
+            if (rssi != 0 && rssi >= _minRSSI) {
                 _lastRSSI = rssi;
                 _CSQtime = (int32_t) (millis() - start) / 1000;
         return true;
@@ -2471,10 +2489,11 @@ bool GPRSbeeClass::sendMQTTPacket(uint8_t * pckt, size_t len)
     return sendDataTCP(pckt, len);
 }
 
-bool GPRSbeeClass::receiveMQTTPacket(uint8_t * pckt, size_t expected_len)
+size_t GPRSbeeClass::receiveMQTTPacket(uint8_t * pckt, size_t size, uint32_t timeout)
 {
-    return receiveDataTCP(pckt, expected_len);
+    return receiveDataTCP(pckt, size, timeout);
 }
+
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////    GPRSbeeOnOff       /////////////////////////////////////

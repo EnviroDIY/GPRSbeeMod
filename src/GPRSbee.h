@@ -214,13 +214,16 @@ public:
   bool sendAPN(const char* apn, const char* username, const char* password);
 
   // Turns on and initializes the modem, then connects to the network and activates the data connection.
-  bool connect(const char* apn, const char* username, const char* password);
+  bool connect(void);
 
   // Disconnects the modem from the network.
   bool disconnect();
 
   // Returns true if the modem is connected to the network and has an activated data connection.
   bool isConnected();
+
+  int8_t convertCSQ2RSSI(uint8_t csq) const;
+  uint8_t convertRSSI2CSQ(int8_t rssi) const;
 
   NetworkRegistrationStatuses getNetworkStatus() { return UnknownNetworkRegistrationStatus; }
 
@@ -229,8 +232,11 @@ public:
   // Get the Received Signal Strength Indication and Bit Error Rate
   bool getRSSIAndBER(int8_t* rssi, uint8_t* ber);
 
-  // Get the Operator Name
+  // Get the Operator Name - NOT IMPLEMENTED
   bool getOperatorName(char* buffer, size_t size) { return false; }
+  bool selectBestOperator(Stream & verbose_stream) { return false; }
+  bool selectOperatorWithRSSI(const String & oper_long, const String & oper_num,
+          int8_t & lastRSSI, Stream & verbose_stream) { return false; }
 
   // Get Mobile Directory Number
   bool getMobileDirectoryNumber(char* buffer, size_t size) { return false; }
@@ -247,13 +253,20 @@ public:
   // Get Host IP
   IP_t getHostIP(const char* host) { return 0; }
 
+  // Returns the sent and received counters
+  bool getSessionCounters(uint32_t* sent_count, uint32_t* recv_count) { return false; }
+  // bool getTotalCounters(uint32_t* sent_count, uint32_t* recv_count) { return false; }
+
+
+
   // ==== Sockets
   // None are implemented for GPRS
 
   int createSocket(Protocols protocol, uint16_t localPort = 0) { return false; }
   bool connectSocket(uint8_t socket, const char* host, uint16_t port) { return false; }
   bool socketSend(uint8_t socket, const uint8_t* buffer, size_t size) { return false; }
-  size_t socketReceive(uint8_t socket, uint8_t* buffer, size_t size) { return 0; } // returns number of bytes set to buffer
+  size_t socketReceive(uint8_t socket, uint8_t* buffer, size_t size) { return 0; }
+  size_t socketBytesPending(uint8_t socket) { return 0; }
   bool closeSocket(uint8_t socket) { return false; }
 
   // ==== HTTP
@@ -286,7 +299,10 @@ public:
   bool openMQTT(const char * server, uint16_t port = 1883);
   bool closeMQTT(bool switchOff=true);
   bool sendMQTTPacket(uint8_t * pckt, size_t len);
-  bool receiveMQTTPacket(uint8_t * pckt, size_t expected_len);
+  size_t receiveMQTTPacket(uint8_t * pckt, size_t size, uint32_t timeout = 20000);
+  size_t availableMQTTPacket() { return 0; }  // NOT IMPLEMENTED
+  bool isAliveMQTT() { return 0; }  // NOT IMPLEMENTED
+
 
 
 

@@ -68,7 +68,7 @@ enum HttpRequestTypes {
     HEAD,
     DELETE,
     PUT,
-    HttpRequestTypesMAX = PUT,
+    HttpRequestTypesMAX
 };
 
 // FTP mode.
@@ -140,7 +140,7 @@ public:
     // Store PIN
     void setPin(const char *pin);
 
-    // Returns the default baud rate of the modem. 
+    // Returns the default baud rate of the modem.
     // To be used when initializing the modem stream for the first time.
     virtual uint32_t getDefaultBaudrate() = 0;
 
@@ -148,11 +148,11 @@ public:
     // Needs a callback in the main application to re-initialize the stream.
     void enableBaudrateChange(BaudRateChangeCallbackPtr callback) { _baudRateChangeCallbackPtr = callback; };
 
-    // Sets the apn, apn username and apn password to the modem.
+    // Sends the apn, apn username and apn password to the modem.
     virtual bool sendAPN(const char* apn, const char* username, const char* password) = 0;
 
     // Turns on and initializes the modem, then connects to the network and activates the data connection.
-    virtual bool connect(const char* apn, const char* username, const char* password) = 0;
+    virtual bool connect() = 0;
 
     // Disconnects the modem from the network.
     virtual bool disconnect() = 0;
@@ -160,10 +160,14 @@ public:
     // Returns true if the modem is connected to the network and has an activated data connection.
     virtual bool isConnected() = 0;
 
-    void setMinSignalQuality(int q);
+    void setMinRSSI(int rssi) { _minRSSI = rssi; }
+    void setMinCSQ(int csq) { _minRSSI = convertCSQ2RSSI(csq); }
+    int8_t getMinRSSI() const { return _minRSSI; }
     uint8_t getCSQtime() const { return _CSQtime; }
+    virtual int8_t convertCSQ2RSSI(uint8_t csq) const = 0;
+    virtual uint8_t convertRSSI2CSQ(int8_t rssi) const = 0;
 
-    uint8_t getLastRSSI() const { return _lastRSSI; }
+    int8_t getLastRSSI() const { return _lastRSSI; }
 
     // Returns the current status of the network.
     virtual NetworkRegistrationStatuses getNetworkStatus() = 0;
@@ -171,13 +175,18 @@ public:
     // Returns the network technology the modem is currently registered to.
     virtual NetworkTechnologies getNetworkTechnology() = 0;
 
-    // Gets the Received Signal Strength Indication in dBm and Bit Error Rate.
-    // Returns true if successful.
-    virtual bool getRSSIAndBER(int8_t* rssi, uint8_t* ber) = 0;
-
     // Gets the Operator Name.
     // Returns true if successful.
     virtual bool getOperatorName(char* buffer, size_t size) = 0;
+
+    // Select the Best Operator.
+    // Returns true if successful.
+    virtual bool selectBestOperator(Stream & verbose_stream) = 0;
+
+    // Select the an Operator (and measure RSSI).
+    // Returns true if successful.
+    virtual bool selectOperatorWithRSSI(const String & oper_long, const String & oper_num,
+            int8_t & lastRSSI, Stream & verbose_stream) = 0;
 
     // Gets Mobile Directory Number.
     // Returns true if successful.
@@ -207,24 +216,31 @@ public:
     // Returns the IP of the given host (nslookup).
     virtual IP_t getHostIP(const char* host) = 0;
 
+    // Returns the sent and received counters
+    virtual bool getSessionCounters(uint32_t* sent_count, uint32_t* recv_count) = 0;
+    //virtual bool getTotalCounters(uint32_t* sent_count, uint32_t* recv_count) = 0;
+
     // ==== Sockets
 
     // Creates a new socket for the given protocol, optionally bound to the given localPort.
     // Returns the index of the socket created or -1 in case of error.
     virtual int createSocket(Protocols protocol, uint16_t localPort = 0) = 0;
-    
+
     // Requests a connection to the given host and port, on the given socket.
     // Returns true if successful.
     virtual bool connectSocket(uint8_t socket, const char* host, uint16_t port) = 0;
-    
+
     // Sends the given buffer through the given socket.
     // Returns true if successful.
     virtual bool socketSend(uint8_t socket, const uint8_t* buffer, size_t size) = 0;
-    
+
     // Reads data from the given socket into the given buffer.
     // Returns the number of bytes written to the buffer.
     virtual size_t socketReceive(uint8_t socket, uint8_t* buffer, size_t size) = 0;
-    
+
+    // Returns the number of bytes pending in the read buffer of the given socket .
+    virtual size_t socketBytesPending(uint8_t socket) = 0;
+
     // Closes the given socket.
     // Returns true if successful.
     virtual bool closeSocket(uint8_t socket) = 0;
@@ -248,12 +264,15 @@ public:
     // This is merely a convenience wrapper which can use socket functions.
     virtual bool receiveDataTCP(uint8_t *data, size_t data_len, uint16_t timeout=4000) = 0;
 
+    // Set a handler to be called when URC
+    void setTCPClosedHandler(void (*handler)(void)) { _tcpClosedHandler = handler; }
+
     // ==== HTTP
 
-    // Creates an HTTP request using the (optional) given buffer and 
+    // Creates an HTTP request using the (optional) given buffer and
     // (optionally) returns the received data.
     // endpoint should include the initial "/".
-    virtual size_t httpRequest(const char* url, uint16_t port, const char* endpoint,
+    virtual size_t httpRequest(const char* server, uint16_t port, const char* endpoint,
             HttpRequestTypes requestType = GET,
             char* responseBuffer = NULL, size_t responseSize = 0,
             const char* sendBuffer = NULL, size_t sendSize = 0) = 0;
@@ -262,7 +281,7 @@ public:
 
     // Opens an FTP connection.
     virtual bool openFtpConnection(const char* server, const char* username, const char* password, FtpModes ftpMode) = 0;
-    
+
     // Closes the FTP connection.
     virtual bool closeFtpConnection() = 0;
 
@@ -288,15 +307,15 @@ public:
     virtual bool closeFtpFile() = 0;
 
     // ==== SMS
-    
+
     // Gets an SMS list according to the given filter and puts the indexes in the "indexList".
     // Returns the number of indexes written to the list or -1 in case of error.
     virtual int getSmsList(const char* statusFilter = "ALL", int* indexList = NULL, size_t size = 0) = 0;
-    
+
     // Reads an SMS from the given index and writes it to the given buffer.
     // Returns true if successful.
     virtual bool readSms(uint8_t index, char* phoneNumber, char* buffer, size_t size) = 0;
-    
+
     // Deletes the SMS at the given index.
     virtual bool deleteSms(uint8_t index) = 0;
 
@@ -309,7 +328,9 @@ public:
     virtual bool openMQTT(const char * server, uint16_t port = 1883) = 0;
     virtual bool closeMQTT(bool switchOff=true) = 0;
     virtual bool sendMQTTPacket(uint8_t * pckt, size_t len) = 0;
-    virtual bool receiveMQTTPacket(uint8_t * pckt, size_t expected_len) = 0;
+    virtual size_t receiveMQTTPacket(uint8_t * pckt, size_t size, uint32_t timeout = 20000) = 0;
+    virtual size_t availableMQTTPacket() = 0;
+    virtual bool isAliveMQTT() = 0;
 
 protected:
     // The stream that communicates with the device.
@@ -317,6 +338,7 @@ protected:
 
     // The (optional) stream to show debug information.
     Stream* _diagStream;
+    bool _disableDiag;
 
     // The size of the input buffer. Equals SODAQ_GSM_MODEM_DEFAULT_INPUT_BUFFER_SIZE
     // by default or (optionally) a user-defined value when using USE_DYNAMIC_BUFFER.
@@ -358,14 +380,19 @@ protected:
     // This is the number of second it took when CSQ was record last
     uint8_t _CSQtime;
 
-    // This is the minimum required CSQ to continue making the connection
-    int _minSignalQuality;
+    // This is the minimum required RSSI to continue making the connection
+    // Use convertCSQ2RSSI if you have a CSQ value
+    int _minRSSI;
 
     // Keep track if ATE0 was sent
     bool _echoOff;
 
     // Keep track when connect started. Use this to record various status changes.
     uint32_t _startOn;
+
+    // A call-back function to be called when the TCP is closed by the remote
+    // Usually this comes in via URC's
+    void (*_tcpClosedHandler)(void);
 
     // Initializes the input buffer and makes sure it is only initialized once.
     // Safe to call multiple times.

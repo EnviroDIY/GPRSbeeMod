@@ -23,8 +23,8 @@
 #define DEBUG
 
 #ifdef DEBUG
-#define debugPrintLn(...) { if (this->_diagStream) this->_diagStream->println(__VA_ARGS__); }
-#define debugPrint(...) { if (this->_diagStream) this->_diagStream->print(__VA_ARGS__); }
+#define debugPrintLn(...) { if (!this->_disableDiag && this->_diagStream) this->_diagStream->println(__VA_ARGS__); }
+#define debugPrint(...) { if (!this->_disableDiag && this->_diagStream) this->_diagStream->print(__VA_ARGS__); }
 #warning "Debug mode is ON"
 #else
 #define debugPrintLn(...)
@@ -45,23 +45,28 @@
 
 #define SODAQ_GSM_TERMINATOR_LEN (sizeof(SODAQ_GSM_TERMINATOR) - 1) // without the NULL terminator
 
-#define SODAQ_GSM_MODEM_DEFAULT_INPUT_BUFFER_SIZE 128
+#define SODAQ_GSM_MODEM_DEFAULT_INPUT_BUFFER_SIZE 250
 
 // Constructor
 Sodaq_GSM_Modem::Sodaq_GSM_Modem() :
     _modemStream(0),
     _diagStream(0),
+    _disableDiag(false),
     _inputBufferSize(SODAQ_GSM_MODEM_DEFAULT_INPUT_BUFFER_SIZE),
     _inputBuffer(0),
     _apn(0),
     _apnUser(0),
     _apnPass(0),
+    _pin(0),
     _onoff(0),
     _baudRateChangeCallbackPtr(0),
     _appendCommand(false),
     _lastRSSI(0),
     _CSQtime(0),
-    _minSignalQuality(-93)      // -93 dBm
+    _minRSSI(-93),      // -93 dBm
+    _echoOff(false),
+    _startOn(0),
+    _tcpClosedHandler(0)
 {
     this->_isBufferInitialized = false;
 }
@@ -276,7 +281,7 @@ size_t Sodaq_GSM_Modem::println(void)
     return i;
 }
 
-// Initializes the input buffer and makes sure it is only initialized once. 
+// Initializes the input buffer and makes sure it is only initialized once.
 // Safe to call multiple times.
 void Sodaq_GSM_Modem::initBuffer()
 {
@@ -298,9 +303,15 @@ void Sodaq_GSM_Modem::setModemStream(Stream& stream)
 
 void Sodaq_GSM_Modem::setApn(const char * apn, const char * user, const char * pass)
 {
-    size_t len = strlen(apn);
-    _apn = static_cast<char*>(realloc(_apn, len + 1));
-    strcpy(_apn, apn);
+    if (apn) {
+        if (!_apn || strcmp(_apn, apn) != 0) {
+            size_t len = strlen(apn);
+            _apn = static_cast<char*>(realloc(_apn, len + 1));
+            strcpy(_apn, apn);
+        }
+    } else {
+        // Should we release the memory?
+    }
     if (user) {
         setApnUser(user);
     }
@@ -311,16 +322,24 @@ void Sodaq_GSM_Modem::setApn(const char * apn, const char * user, const char * p
 
 void Sodaq_GSM_Modem::setApnUser(const char * user)
 {
-    size_t len = strlen(user);
-    _apnUser = static_cast<char*>(realloc(_apnUser, len + 1));
-    strcpy(_apnUser, user);
+    if (user) {
+        if (!_apnUser || strcmp(_apnUser, user) != 0) {
+            size_t len = strlen(user);
+            _apnUser = static_cast<char*>(realloc(_apnUser, len + 1));
+            strcpy(_apnUser, user);
+        }
+    }
 }
 
 void Sodaq_GSM_Modem::setApnPass(const char * pass)
 {
-    size_t len = strlen(pass);
-    _apnPass = static_cast<char*>(realloc(_apnPass, len + 1));
-    strcpy(_apnPass, pass);
+    if (pass) {
+        if (!_apnPass || strcmp(_apnPass, pass) != 0) {
+            size_t len = strlen(pass);
+            _apnPass = static_cast<char*>(realloc(_apnPass, len + 1));
+            strcpy(_apnPass, pass);
+        }
+    }
 }
 
 void Sodaq_GSM_Modem::setPin(const char * pin)
@@ -330,16 +349,6 @@ void Sodaq_GSM_Modem::setPin(const char * pin)
     strcpy(_pin, pin);
 }
 
-void Sodaq_GSM_Modem::setMinSignalQuality(int q)
-{
-    if (q < 0) {
-        _minSignalQuality = q;
-    } else {
-        // This is correct for UBlox
-        // For SIM is is close enough
-        _minSignalQuality = -113 + 2 * q;
-    }
-}
 // Returns a character from the modem stream if read within _timeout ms or -1 otherwise.
 int Sodaq_GSM_Modem::timedRead(uint32_t timeout) const
 {
@@ -379,6 +388,9 @@ size_t Sodaq_GSM_Modem::readBytesUntil(char terminator, char* buffer, size_t len
         *buffer++ = static_cast<char>(c);
         index++;
     }
+    if (index < length) {
+        *buffer = '\0';
+    }
 
     // TODO distinguise timeout from empty string?
     // TODO return error for overflow?
@@ -398,7 +410,7 @@ size_t Sodaq_GSM_Modem::readBytes(uint8_t* buffer, size_t length, uint32_t timeo
         if (c < 0) {
             break;
         }
-        
+
         *buffer++ = static_cast<uint8_t>(c);
         count++;
     }
@@ -413,16 +425,17 @@ size_t Sodaq_GSM_Modem::readBytes(uint8_t* buffer, size_t length, uint32_t timeo
 // Returns the number of bytes read, not including the null terminator.
 size_t Sodaq_GSM_Modem::readLn(char* buffer, size_t size, uint32_t timeout)
 {
-    size_t len = readBytesUntil(SODAQ_GSM_TERMINATOR[SODAQ_GSM_TERMINATOR_LEN - 1], buffer, size, timeout);
+    // Use size-1 to leave room for a string terminator
+    size_t len = readBytesUntil(SODAQ_GSM_TERMINATOR[SODAQ_GSM_TERMINATOR_LEN - 1], buffer, size - 1, timeout);
 
-    // check if the terminator is more than 1 characters, then check if the first character of it exists 
+    // check if the terminator is more than 1 characters, then check if the first character of it exists
     // in the calculated position and terminate the string there
-    if ((SODAQ_GSM_TERMINATOR_LEN > 1) && (_inputBuffer[len - (SODAQ_GSM_TERMINATOR_LEN - 1)] == SODAQ_GSM_TERMINATOR[0])) {
+    if ((SODAQ_GSM_TERMINATOR_LEN > 1) && (buffer[len - (SODAQ_GSM_TERMINATOR_LEN - 1)] == SODAQ_GSM_TERMINATOR[0])) {
         len -= SODAQ_GSM_TERMINATOR_LEN - 1;
     }
 
-    // terminate string
-    _inputBuffer[len] = 0;
+    // terminate string, there should always be room for it (see size-1 above)
+    buffer[len] = '\0';
 
     return len;
 }
