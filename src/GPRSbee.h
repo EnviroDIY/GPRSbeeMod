@@ -238,22 +238,34 @@ public:
   bool selectOperatorWithRSSI(const String & oper_long, const String & oper_num,
           int8_t & lastRSSI, Stream & verbose_stream) { return false; }
 
-  // Get Mobile Directory Number
+  // Get Mobile Directory Number - NOT IMPLEMENTED
   bool getMobileDirectoryNumber(char* buffer, size_t size) { return false; }
 
-  // Get International Mobile Station Identity
-  bool getIMSI(char* buffer, size_t size) { return false; }
+  // Gets International Mobile Equipment Identity (IMEI)
+  // Should be provided with a buffer of at least 16 bytes.
+  // Returns true if successful.
+  bool getIMEI(char *buffer, size_t buflen);
 
-  // Get SIM status
+  // Gets Integrated Circuit Card ID (SIM card number)
+  // Should be provided with a buffer of at least 21 bytes.
+  // Returns true if successful.
+  bool getCCID(char *buffer, size_t buflen);
+
+  // Gets the International Mobile Station Identity.
+  // Should be provided with a buffer of at least 16 bytes.
+  // Returns true if successful.
+  bool getIMSI(char* buffer, size_t buflen);
+
+  // Get SIM status - NOT IMPLEMENTED
   SimStatuses getSimStatus() { return SimStatusUnknown; }
 
-  // Get IP Address
+  // Get IP Address - NOT IMPLEMENTED
   IP_t getLocalIP() { return 0; }
 
-  // Get Host IP
+  // Get Host IP - NOT IMPLEMENTED
   IP_t getHostIP(const char* host) { return 0; }
 
-  // Returns the sent and received counters
+  // Returns the sent and received counters - NOT IMPLEMENTED
   bool getSessionCounters(uint32_t* sent_count, uint32_t* recv_count) { return false; }
   // bool getTotalCounters(uint32_t* sent_count, uint32_t* recv_count) { return false; }
 
@@ -311,14 +323,10 @@ public:
   ////////////////////////////////////////////
   // These are functions unique to the GPRSBee, not the GSM Modem class.
 
-  // Gets device IMEI number
-  bool getIMEI(char *buffer, size_t buflen);
   // Gets Complete TA Capabilities List
   bool getGCAP(char *buffer, size_t buflen);
   // Gets international mobile subscriber identity
   bool getCIMI(char *buffer, size_t buflen);
-  // Gets the SIM card number
-  bool getCCID(char *buffer, size_t buflen);
   // Gets the calling line identity (CLI) of the calling party
   bool getCLIP(char *buffer, size_t buflen);
   // Gets the calling line indentification restriction

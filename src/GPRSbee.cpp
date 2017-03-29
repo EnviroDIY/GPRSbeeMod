@@ -1992,6 +1992,13 @@ ending:
   return retval;
 }
 
+bool GPRSbeeClass::getIMSI(char *buffer, size_t buflen)
+{
+  switchEchoOff();
+  uint32_t ts_max = millis() + 2000;
+  return getStrValue("AT+CIMI", buffer, buflen, ts_max);
+}
+
 bool GPRSbeeClass::getIMEI(char *buffer, size_t buflen)
 {
   switchEchoOff();
