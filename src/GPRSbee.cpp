@@ -705,6 +705,38 @@ uint8_t GPRSbeeClass::convertRSSI2CSQ(int8_t rssi) const
     return (rssi + 113) / 2;
 }
 
+NetworkRegistrationStatuses GPRSbeeClass::getNetworkStatus()
+{
+    sendCommand_P(PSTR("AT+CREG?"));
+    // Reply is:
+    // +CREG: <n>,<stat>[,<lac>,<ci>]   mostly this is +CREG: 0,1
+    // we want the second number, the <stat>
+    // 0 = Not registered, MT is not currently searching an operator to register to
+    // 1 = Registered, home network
+    // 2 = Not registered, but MT is currently trying to attach...
+    // 3 = Registration denied
+    // 4 = Unknown
+    // 5 = Registered, roaming
+    int value = 0;
+    if (waitForMessage_P(PSTR("+CREG:"), millis() + 12000)) {
+      const char *ptr = strchr(_inputBuffer, ',');
+      if (ptr) {
+        ++ptr;
+        value = strtoul(ptr, NULL, 0);
+      }
+    }
+    waitForOK();
+    switch (value)
+    {
+        case 0: {return NoNetworkRegistrationStatus;}
+        case 1: {return Home;}
+        case 2: {return NoNetworkRegistrationStatus;}
+        case 3: {return Denied;}
+        case 4: {return UnknownNetworkRegistrationStatus;}
+        case 5: {return Roaming;}
+    }
+}
+
 /*!
  * \brief Utility function to do waitForSignalQuality and waitForCREG
  */

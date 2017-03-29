@@ -208,7 +208,10 @@ public:
   // compatibility, many are just references to the functions above.  (ie, the
   // functions above could have been re-named, but instead of doing that, they
   // are referenced here.)
-  uint32_t getDefaultBaudrate() { return 0; }
+
+  // Returns the default baud rate of the modem.
+  // To be used when initializing the modem stream for the first time.
+  uint32_t getDefaultBaudrate() { return 9600; }
 
   // Sets the apn, apn username and apn password to the modem.
   bool sendAPN(const char* apn, const char* username, const char* password);
@@ -222,10 +225,11 @@ public:
   // Returns true if the modem is connected to the network and has an activated data connection.
   bool isConnected();
 
+  // Functions for different types of signal strength indicators
   int8_t convertCSQ2RSSI(uint8_t csq) const;
   uint8_t convertRSSI2CSQ(int8_t rssi) const;
 
-  NetworkRegistrationStatuses getNetworkStatus() { return UnknownNetworkRegistrationStatus; }
+  NetworkRegistrationStatuses getNetworkStatus();
 
   NetworkTechnologies getNetworkTechnology() { return UnknownNetworkTechnology; }
 
