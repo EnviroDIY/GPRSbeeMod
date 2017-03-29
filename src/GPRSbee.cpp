@@ -39,23 +39,6 @@
 #endif
 
 
-// A specialized class to switch on/off the GPRSbee module
-// The VCC3.3 pin is switched by the Autonomo BEE_VCC pin
-// The DTR pin is the actual ON/OFF pin, it is A13 on Autonomo, D20 on Tatu
-class GPRSbeeOnOff : public Sodaq_OnOffBee
-{
-public:
-    GPRSbeeOnOff();
-    void init(int vcc33Pin, int onoffPin, int statusPin);
-    void on();
-    void off();
-    bool isOn();
-private:
-    int8_t _vcc33Pin;
-    int8_t _onoffPin;
-    int8_t _statusPin;
-};
-
 static GPRSbeeOnOff gprsbee_onoff;
 
 GPRSbeeClass gprsbee;
@@ -74,13 +57,93 @@ static inline void mydelay(unsigned long nrMillis)
   delay(nrMillis);
 }
 
-void GPRSbeeClass::initAutonomoSIM800(Stream &stream, int vcc33Pin, int onoffPin, int statusPin,
+/*!
+ * \brief Initialize the instance
+ * \param stream - the Stream instance to use to communicate with the SIMx00
+ * \param status_CTS_pin - the pin that is connected to the Bee CTS
+ * \param powerPin - the pin that is connected to the Bee DTR
+ *    (used to toggle power of the SIM900)
+ * \param bufferSize - the size of the internal buffer used to read lines from the SIMx00
+ *
+ * This function does the work that a constructor could have done. But
+ * in the Arduino world things are done differently.
+ * The pinmode of the pins are setup. The output pins get their default
+ * value.
+ *
+ * There are a few different methods to switch on the GPRSBee, depending on the
+ * version and the power options.  In short, you first need to provide power to
+ * the Bee, if it is not continuously powered.  Then you need to toggle the /DTR
+ * pin to actually switch it on.
+ * For a v0.4 (SIM900) GPRSBee, the /DTR pin must be toggled LOW->HIGH->LOW to
+ * turn the Bee on, and then the same sequence to turn it off.
+ * For a v0.6 (SIM800) GPRSBee, the /DTR pin must be be set HIGH to turn the
+ * Bee on, and then left high for the duration of communications.  It is turned
+ * off by setting the /DTR pin LOW.
+ * After the Bee itself has been turned off, the power to it can be cut, if it
+ * is not continuously powered.
+ *
+ * For backwards compatibility, there are several different init functions, which
+ * are based on whether the power can be toggled on or off to the GPRSBee and which
+ * version of the Bee is attached.
+ */
+
+
+// This is "old fashioned" method, originally for an unmodified Mbili.
+// This assumes that the you have a v0.4 GPRSBee with continuous power.
+void GPRSbeeClass::init(Stream &stream, int status_CTS_pin, int onoff_DTR_pin,
     int bufferSize)
 {
-  initProlog(stream, bufferSize);
+    initProlog(stream, bufferSize);
 
-  gprsbee_onoff.init(vcc33Pin, onoffPin, statusPin);
-  _onoff = &gprsbee_onoff;
+    gprsbee_onoff.init(-1, onoff_DTR_pin, status_CTS_pin, V04);
+    _onoff = &gprsbee_onoff;
+    _onoff_DTR_pin = onoff_DTR_pin;
+    _status_CTS_pin = status_CTS_pin;
+}
+
+// This does not look like an init method, but is included for backwards
+// compatibility.  It was intended for a SODAQ Mbili where the switched power
+// on JP2 has been jumpered to power the GPRSbee and the same digital output
+// connected to the /DTR of the Bee slot.  Because the /DTR and power are on the
+// same pin, you cannot use the LOW->HIGH->LOW on the /DTR that you would
+// normally use with a v0.4 GPRSBee, but instead just start the power.
+void GPRSbeeClass::setPowerSwitchedOnOff(bool x)
+{
+    gprsbee_onoff.init(_onoff_DTR_pin, -1, _status_CTS_pin, V04);
+}
+
+// This is the "Ndogo" method.  This assumes that the power to the Bee can be
+// set separately from turning the Bee on and that you have a v0.4 GPRSBee.
+void GPRSbeeClass::initNdogoSIM800(Stream &stream, int pwrkeyPin, int vbatPin, int status_CTS_pin,
+    int bufferSize)
+{
+    initProlog(stream, bufferSize);
+
+    gprsbee_onoff.init(vbatPin, pwrkeyPin, status_CTS_pin, V04);
+    _onoff = &gprsbee_onoff;
+}
+
+// This is the "Autonomo" method.  This assumes that the power to the Bee can be
+// set separately from turning the Bee on and that you have a v0.6 GPRSBee.
+void GPRSbeeClass::initAutonomoSIM800(Stream &stream, int vcc33Pin, int onoff_DTR_pin, int status_CTS_pin,
+    int bufferSize)
+{
+    initProlog(stream, bufferSize);
+
+    gprsbee_onoff.init(vcc33Pin, onoff_DTR_pin, status_CTS_pin, V06);
+    _onoff = &gprsbee_onoff;
+}
+
+// This is a new generic init method that allows you to specify separately whether
+// there is a pin controlling the power to the GPRSBee, which pins connect to the
+// DTR and CTS, and the GPRSBee version.
+void GPRSbeeClass::initGPRS(Stream &stream, int vcc33Pin, int onoff_DTR_pin, int status_CTS_pin,
+     GPRSVersion version /* = V06*/, int bufferSize /* = SIM900_DEFAULT_BUFFER_SIZE*/)
+{
+    initProlog(stream, bufferSize);
+
+    gprsbee_onoff.init(vcc33Pin, onoff_DTR_pin, status_CTS_pin, version);
+    _onoff = &gprsbee_onoff;
 }
 
 void GPRSbeeClass::initProlog(Stream &stream, size_t bufferSize)
@@ -137,7 +200,7 @@ void GPRSbeeClass::flushInput()
   int c;
   while ((c = _modemStream->read()) >= 0) {
     diagPrint((char)c);
-  }
+}
 }
 
 /*
@@ -577,13 +640,35 @@ bool GPRSbeeClass::getStrValue(const char *cmd, char * str, size_t size, uint32_
 // Sets the apn, apn username and apn password to the modem.
 bool GPRSbeeClass::sendAPN(const char* apn, const char* username, const char* password)
 {
-    return false;
+    return setBearerParms(apn, username, password);
 }
 
 // Turns on and initializes the modem, then connects to the network and activates the data connection.
 bool GPRSbeeClass::connect(const char* apn, const char* username, const char* password)
 {
-    // TODO
+    if (!on()) {
+      goto ending;
+    }
+
+    if (!connectProlog()) {
+      goto cmd_error;
+    }
+
+    if (!connectProlog()) {
+      goto cmd_error;
+    }
+
+    if (!setBearerParms(apn, username, password)) {
+      goto cmd_error;
+    }
+
+    return true;
+
+    cmd_error:
+    diagPrintLn(F("Network connection failed!"));
+    off();
+
+    ending:
     return false;
 }
 
@@ -708,18 +793,8 @@ bool GPRSbeeClass::waitForCREG()
  */
 bool GPRSbeeClass::connectProlog()
 {
-  // TODO Use networkOn instead of switchEchoOff, waitForSignalQuality, waitForCREG
-
-  // Suppress echoing
-  switchEchoOff();
-
-  // Wait for signal quality
-  if (!waitForSignalQuality()) {
-    return false;
-  }
-
-  // Wait for CREG
-  if (!waitForCREG()) {
+  // Turn on the network
+  if (!networkOn()) {
     return false;
   }
 
@@ -1096,11 +1171,19 @@ ending:
   return false;
 }
 
+bool GPRSbeeClass::openFtpConnection(const char* server, const char* username, const char* password, FtpModes ftpMode)
+{
+  return openFTP(_apn, 0, 0, server, username, password);
+}
+
 bool GPRSbeeClass::closeFTP()
 {
   off();            // Ignore errors
   return true;
 }
+
+bool GPRSbeeClass::closeFtpConnection()
+ {return closeFTP();}
 
 /*
  * \brief Open a (FTP) session (one file)
@@ -1170,6 +1253,8 @@ bool GPRSbeeClass::openFTPfile(const char *fname, const char *path)
 ending:
   return false;
 }
+bool GPRSbeeClass::openFtpFile(const char* filename, const char* path)
+  { return openFTPfile(filename, path); }
 
 bool GPRSbeeClass::closeFTPfile()
 {
@@ -1197,6 +1282,8 @@ bool GPRSbeeClass::closeFTPfile()
 
   return true;
 }
+bool GPRSbeeClass::closeFtpFile()
+{ return closeFTPfile(); }
 
 /*
  * \brief Lower layer function to insert a number of bytes in the FTP session
@@ -1335,6 +1422,9 @@ bool GPRSbeeClass::sendFTPdata(uint8_t (*read)(), size_t size)
   }
   return true;
 }
+bool GPRSbeeClass::ftpSend(const uint8_t* buffer, size_t size)
+ { return sendFTPdata(const_cast<uint8_t*>(buffer), size); }
+
 
 bool GPRSbeeClass::sendSMS(const char *telno, const char *text)
 {
@@ -1342,20 +1432,8 @@ bool GPRSbeeClass::sendSMS(const char *telno, const char *text)
   uint32_t ts_max;
   bool retval = false;
 
-  if (!on()) {
-    goto ending;
-  }
-
-  // Suppress echoing
-  switchEchoOff();
-
-  // Wait for signal quality
-  if (!waitForSignalQuality()) {
-    goto cmd_error;
-  }
-
-  // Wait for CREG
-  if (!waitForCREG()) {
+  // Wait for Network
+  if (!networkOn()) {
     goto cmd_error;
   }
 
@@ -1393,6 +1471,8 @@ ending:
  *
  * This function does:
  *  - HTTPPARA with the URL
+ *  - HTTPPARA with the Content Type
+ *  - HTTPPARA with the HEADERS
  *  - HTTPDATA
  *  - HTTPACTION(1)
  */
@@ -1412,6 +1492,33 @@ bool GPRSbeeClass::doHTTPPOSTmiddle(const char *url, const char *buffer, size_t 
     goto ending;
   }
 
+  // Add HTTP Post Content Type
+  if ( _contentType != "" )
+  {
+    sendCommandProlog();
+    sendCommandAdd_P(PSTR("AT+HTTPPARA=\"CONTENT\",\""));
+    sendCommandAdd(_contentType);
+    sendCommandAdd('"');
+    sendCommandEpilog();
+    if (!waitForOK()) {
+    goto ending;
+    }
+  }
+
+  // Add HTTP CustomHeaders
+  if ( _HTTPHeaders != "" )
+  {
+    sendCommandProlog();
+    sendCommandAdd_P(PSTR("AT+HTTPPARA=\"USERDATA\",\""));
+    sendCommandAdd(_HTTPHeaders);
+    sendCommandAdd('"');
+    sendCommandEpilog();
+    if (!waitForOK()) {
+    goto ending;
+    }
+  }
+
+  // Tell it how much data you will send
   sendCommandProlog();
   sendCommandAdd_P(PSTR("AT+HTTPDATA="));
   itoa(len, num_bytes, 10);
@@ -1424,6 +1531,7 @@ bool GPRSbeeClass::doHTTPPOSTmiddle(const char *url, const char *buffer, size_t 
   }
 
   // Send data ...
+  diagPrintLn("--Sending Data--")
   for (size_t i = 0; i < len; ++i) {
     _modemStream->print(*buffer++);
   }
@@ -1492,6 +1600,20 @@ bool GPRSbeeClass::doHTTPGETmiddle(const char *url, char *buffer, size_t len)
     goto ending;
   }
 
+  // Add HTTP Headers, if applicable
+  if ( _HTTPHeaders != "" )
+  {
+    sendCommandProlog();
+    sendCommandAdd_P(PSTR("AT+HTTPPARA=\"USERDATA\",\""));
+    sendCommandAdd(_HTTPHeaders);
+    sendCommandAdd('"');
+    sendCommandEpilog();
+    if (!waitForOK()) {
+    goto ending;
+    }
+  }
+
+  // Tell it this will be a "GET" Request (0)
   if (!doHTTPACTION(0)) {
     goto ending;
   }
@@ -1632,10 +1754,18 @@ bool GPRSbeeClass::doHTTPACTION(char num)
       goto ending;
     }
     // TODO Which result codes are allowed to pass?
-    if (replycode == 200) {
+    if (replycode == 200 || replycode == 201 || replycode == 202)
+    {
       retval = true;
-    } else {
-      // Everything else is considered an error
+    }
+    else  // Everything else is considered an error
+    {
+      if (replycode >= 300 && replycode < 400)
+      { diagPrintLn("Request Redirected"); }
+      if (replycode >= 400 && replycode < 500)
+      { diagPrintLn("Client Error! Check request format and permissions"); }
+      if (replycode >= 500 && replycode < 600)
+      { diagPrintLn("Server Error!"); }
     }
   }
 
@@ -1753,6 +1883,37 @@ ending:
   off();
   return retval;
 }
+
+
+
+size_t GPRSbeeClass::httpRequest(const char* url, uint16_t port,
+        const char* endpoint, HttpRequestTypes requestType,
+        char* responseBuffer, size_t responseSize,
+        const char* sendBuffer, size_t sendSize)
+{
+    if (!strcmp(_apn,""))
+    {
+        switch (requestType)
+        {
+            case GET:
+            {
+                doHTTPGET(const_cast<char*>(_apn), url, responseBuffer, responseSize);
+            }
+            case POST:
+            {
+                if (responseBuffer != NULL)
+                {doHTTPPOST(const_cast<char*>(_apn), url, sendBuffer, sendSize);}
+                else
+                {doHTTPPOSTWithReply(const_cast<char*>(_apn), url, sendBuffer, sendSize, responseBuffer, responseSize);}
+            }
+            default:
+            {diagPrintLn(F("HTTP Request failed!"));}
+        }
+    }
+    return 0;
+}
+
+
 
 bool GPRSbeeClass::setBearerParms(const char *apn, const char *user, const char *pwd)
 {
@@ -2004,6 +2165,7 @@ void GPRSbeeClass::setProductId()
   }
 }
 
+// Just a helper function to remove extra space in commands
 const char * GPRSbeeClass::skipWhiteSpace(const char * txt)
 {
   while (*txt != '\0' && *txt == ' ') {
@@ -2320,30 +2482,31 @@ bool GPRSbeeClass::receiveMQTTPacket(uint8_t * pckt, size_t expected_len)
 GPRSbeeOnOff::GPRSbeeOnOff()
 {
     _vcc33Pin = -1;
-    _onoffPin = -1;
-    _statusPin = -1;
+    _onoff_DTR_pin = -1;
+    _status_CTS_pin = -1;
+    _version = V06;
 }
 
 // Initializes the instance
-void GPRSbeeOnOff::init(int vcc33Pin, int onoffPin, int statusPin)
+void GPRSbeeOnOff::init(int vcc33Pin, int onoff_DTR_pin, int status_CTS_pin, GPRSVersion version /* = V06*/)
 {
+    _version = version;
+
     if (vcc33Pin >= 0) {
       _vcc33Pin = vcc33Pin;
       // First write the output value, and only then set the output mode.
       digitalWrite(_vcc33Pin, LOW);
       pinMode(_vcc33Pin, OUTPUT);
     }
-
-    if (onoffPin >= 0) {
-      _onoffPin = onoffPin;
-      // First write the output value, and only then set the output mode.
-      digitalWrite(_onoffPin, LOW);
-      pinMode(_onoffPin, OUTPUT);
+    if (onoff_DTR_pin >= 0) {
+        _onoff_DTR_pin = onoff_DTR_pin;
+        // First write the output value, and only then set the output mode.
+        digitalWrite(_onoff_DTR_pin, LOW);
+        pinMode(_onoff_DTR_pin, OUTPUT);
     }
-
-    if (statusPin >= 0) {
-      _statusPin = statusPin;
-      pinMode(_statusPin, INPUT);
+    if (status_CTS_pin >= 0) {
+        _status_CTS_pin = status_CTS_pin;
+        pinMode(_status_CTS_pin, INPUT);
     }
 }
 
@@ -2354,11 +2517,31 @@ void GPRSbeeOnOff::on()
         digitalWrite(_vcc33Pin, HIGH);
     }
 
-    // Wait a little
-    // TODO Figure out if this is really needed
-    delay(2);
-    if (_onoffPin >= 0) {
-        digitalWrite(_onoffPin, HIGH);
+    switch (_version) {
+        case V06:
+        case V05:
+        {
+            // Wait a little
+            // TODO Figure out if this is really needed
+            delay(2);
+            if (_onoff_DTR_pin >= 0) {
+                digitalWrite(_onoff_DTR_pin, HIGH);
+            }
+        }
+        case V04:
+        {
+            if (!isOn()) {
+            #if 1
+              // To be on the safe side, make sure we start from LOW
+              // TODO Decide if this is useful.
+              digitalWrite(_onoff_DTR_pin, LOW);
+              mydelay(200);
+            #endif
+              digitalWrite(_onoff_DTR_pin, HIGH);
+              mydelay(2500);
+              digitalWrite(_onoff_DTR_pin, LOW);
+            }
+        }
     }
 }
 
@@ -2368,23 +2551,42 @@ void GPRSbeeOnOff::off()
         digitalWrite(_vcc33Pin, LOW);
     }
 
-    // The GPRSbee is switched off immediately
-    if (_onoffPin >= 0) {
-        digitalWrite(_onoffPin, LOW);
+    switch (_version) {
+        case V06:
+        case V05:
+        {
+            // The GPRSbee is switched off immediately
+            if (_onoff_DTR_pin >= 0) {
+                digitalWrite(_onoff_DTR_pin, LOW);
+            // Should be instant
+            // Let's wait a little, but not too long
+            delay(50);
+        }
+        }
+        case V04:
+        {
+            if (isOn()) {
+                #if 1
+                    // To be on the safe side, make sure we start from LOW
+                    // TODO Decide if this is useful.
+                    digitalWrite(_onoff_DTR_pin, LOW);
+                    mydelay(200);
+                #endif
+                digitalWrite(_onoff_DTR_pin, HIGH);
+                mydelay(2500);
+                digitalWrite(_onoff_DTR_pin, LOW);
+                // Not bothering to wait and do a graceful shutdown.
+            }
+        }
     }
-
-    // Should be instant
-    // Let's wait a little, but not too long
-    delay(50);
 }
 
 bool GPRSbeeOnOff::isOn()
 {
-    if (_statusPin >= 0) {
-        bool status = digitalRead(_statusPin);
+    if (_status_CTS_pin >= 0) {
+        bool status = digitalRead(_status_CTS_pin);
         return status;
     }
-
     // No status pin. Let's assume it is on.
     return true;
 }
