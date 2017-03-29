@@ -326,14 +326,15 @@ public:
   bool setCFUN(uint8_t value);
   bool getCFUN(uint8_t * value);
 
-  // Enables/disables the local time stamp functions
-  // When these are enabled getCCLK can be used to get the network time
-  void enableLTS();
-  void disableLTS();
   // Enables/disables initial Unsolicited Result Codes (URC) presentation value
   // These functions are equivalent to using setCUIRC(1) and setCUIRC(0)
   void enableCIURC();
   void disableCIURC();
+
+  // Enables/disables the local time stamp functions
+  // When these are enabled getCCLK can be used to get the network time
+  void enableLTS();
+  void disableLTS();
 
   // Basic functions to send an AT command to the SIM and wait for it
   // to return an OK

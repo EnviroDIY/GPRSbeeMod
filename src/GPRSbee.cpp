@@ -40,6 +40,7 @@
 
 
 static GPRSbeeOnOff gprsbee_onoff;
+
 GPRSbeeClass gprsbee;
 
 /*
@@ -152,7 +153,7 @@ void GPRSbeeClass::initProlog(Stream &stream, size_t bufferSize)
 
   _modemStream = &stream;
   _diagStream = 0;
-  _minSignalQuality = 10;
+
   _ftpMaxLength = 0;
   _transMode = false;
 
@@ -164,8 +165,6 @@ void GPRSbeeClass::initProlog(Stream &stream, size_t bufferSize)
 
   _timeToOpenTCP = 0;
   _timeToCloseTCP = 0;
-  _HTTPHeaders = "";
-  _contentType = "";
 }
 
 bool GPRSbeeClass::isAlive()
@@ -673,15 +672,15 @@ bool GPRSbeeClass::connect(const char* apn, const char* username, const char* pa
     return false;
 }
 
-// Disconnects the modem from the network.
-bool GPRSbeeClass::disconnect()
+// Returns true if the modem is connected to the network and has an activated data connection.
+bool GPRSbeeClass::isConnected()
 {
     // TODO
     return false;
 }
 
-// Returns true if the modem is connected to the network and has an activated data connection.
-bool GPRSbeeClass::isConnected()
+// Disconnects the modem from the network.
+bool GPRSbeeClass::disconnect()
 {
     // TODO
     return false;
